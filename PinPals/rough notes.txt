@@ -1,0 +1,22 @@
+//TODO implementation of 
+
+struct{
+HWND hwnd;
+RECT rect;
+
+};
+
+
+int x = NOTE_MARGIN;
+int y = NOTE_MARGIN;  //10 on first note + 50 + 10
+for (int i = 0; i < noteCount; i++)
+{
+    notes[i].rect.left = x;
+    notes[i].rect.top = y; 70 on second note
+    notes[i].rect.right = x + NOTE_SIZE;
+    notes[i].rect.bottom = y + NOTE_SIZE;
+
+    y += NOTE_SIZE + NOTE_MARGIN; // stack vertically
+}
+
+(NOTE_SIZE + NOTE_MARGIN) * noteCount 

@@ -19,11 +19,11 @@
 #define NOTE_HANDLE 0
 #define NOTE_TOPMOST_STATE sizeof(LONG_PTR)
 #define NEW_NOTE_BUTTON_HANDLE sizeof(LONG_PTR)
-
 //custom messages
 #define WM_APP_NOTE_CLOSED (WM_APP + 1)
 #define WM_APP_NOTE_DELETED (WM_APP + 2)
 #define WM_APP_NOTE_EDIT (WM_APP + 3)
+#define WM_APP_SAVE (WM_APP + 4)
 
 //constants
 char windowClass[] = "myWindowClass";
@@ -45,9 +45,100 @@ struct NoteRectAndHandle {
     RECT rect;
     char text[MAX_NOTE_TEXT_LEN];
     int textLen;
+    int noteId;
 };
 struct NoteRectAndHandle* notes = NULL;
 
+int addToDatabase(struct NoteRectAndHandle* note)
+{
+    int rc;
+    sqlite3_stmt* stmt;
+    char* errmsg = NULL;
+
+    const char* insert_sql =
+        "INSERT INTO notes (title, content) VALUES (?, ?);";
+
+    // Prepare the SQL statement
+    rc = sqlite3_prepare_v2(db, insert_sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "Prepare failed", MB_OK | MB_ICONERROR);
+        return rc;
+    }
+
+    // Bind title and content dynamically
+    sqlite3_bind_text(stmt, 1, "New note", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, note->text, -1, SQLITE_TRANSIENT);
+
+    // Execute the INSERT
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        MessageBoxA(NULL, "Failed to insert note", "Error", MB_OK | MB_ICONERROR);
+        return rc;
+    }
+
+    // Get the last inserted ID
+    sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
+
+    // Retrieve the inserted note and show it
+    const char* select_sql =
+        "SELECT title, content FROM notes WHERE id = ?;";
+
+    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, last_id);
+
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* title = sqlite3_column_text(stmt, 0);
+            const unsigned char* content = sqlite3_column_text(stmt, 1);
+
+            char message[512];
+            snprintf(message, sizeof(message), "Title: %s\nContent: %s", title, content);
+            //MessageBoxA(NULL, message, "Note Added", MB_OK);
+        }
+        sqlite3_finalize(stmt);
+    }
+    else {
+        MessageBoxA(NULL, "Failed to prepare SELECT", "Error", MB_OK | MB_ICONERROR);
+    }
+
+    return SQLITE_OK;
+}
+char* getDatabaseEntry(int noteId) {
+    if (!db) {
+        MessageBox(NULL, "Database not open", "Error", MB_OK | MB_ICONERROR);
+        return NULL;
+    }
+
+    const char* sql = "SELECT content FROM notes WHERE id = ?;";
+    sqlite3_stmt* stmt = NULL;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_prepare_v2 failed", MB_OK | MB_ICONERROR);
+        return NULL;
+    }
+
+    // Bind the note ID
+    sqlite3_bind_int(stmt, 1, noteId);
+
+    char* result = NULL;
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        const unsigned char* text = sqlite3_column_text(stmt, 0);
+        if (text) {
+            result = _strdup((const char*)text); // or strdup if not using MSVC
+        }
+    }
+    else if (rc != SQLITE_DONE) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_step failed", MB_OK | MB_ICONERROR);
+    }
+
+    sqlite3_finalize(stmt);
+    return result; // caller must free(result)
+}
 
 // Define the original procedure globally
 WNDPROC g_OriginalEditProc = NULL;
@@ -235,12 +326,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		
 		for(int i = 0; i < noteCount; i++)
 		{
-							RECT rectXButton;
+			RECT rectXButton;
             int buttonSize = 15;
             rectXButton.left   = notes[i].rect.right - buttonSize;
             rectXButton.top    = notes[i].rect.top;
             rectXButton.right  = notes[i].rect.right;
             rectXButton.bottom = notes[i].rect.top + buttonSize;
+
+
+            RECT saveButton;
+            buttonSize = 25;
+            saveButton.left = notes[i].rect.right - buttonSize * 2;
+            saveButton.top = notes[i].rect.top;
+            saveButton.right = notes[i].rect.right;
+            saveButton.bottom = notes[i].rect.top + buttonSize * 2;
 			
 			if(PtInRect(&notes[i].rect,ptClick))
 			{
@@ -249,7 +348,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             {
 				SendMessage(hwnd,WM_APP_NOTE_DELETED,(WPARAM)notes[i].hwnd,(LPARAM)notes[i].hwnd);
                 break;
-            }		
+            }	
+
+            if (PtInRect(&saveButton, ptClick))
+            {
+                SendMessage(hwnd, WM_APP_SAVE, (WPARAM)notes[i].hwnd, (LPARAM)notes[i].hwnd);
+                break;
+            }
 			
 			ShowWindow(notes[i].hwnd,SW_SHOW);
 			break;
@@ -457,22 +562,47 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
                 // Adjust the rect inward slightly for padding
                 InflateRect(&textRect, -2, -2);
-
+                char* content = getDatabaseEntry(4);
                 DrawText(hdc,
                     notes[i].text,
                     notes[i].textLen,
                     &textRect,
                     DT_LEFT | DT_TOP | DT_WORDBREAK);
+
+                if (content) {
+                    //MessageBox(hwnd, content, "take this", MB_OK);
+                    free(content);  // release memory
+                }
+                else {
+                    MessageBox(hwnd, "No note found", "take this", MB_OK);
+                }
             }
+
+            char* content = getDatabaseEntry(4);
+            DrawText(hdc,
+                content,
+                notes[i].textLen,
+                &notes[0].rect,
+                DT_LEFT | DT_TOP | DT_WORDBREAK);
+                
 			RECT rectXButton;
         int buttonSize = 15;
         rectXButton.left   = notes[i].rect.right - buttonSize;
         rectXButton.top    = notes[i].rect.top;
         rectXButton.right  = notes[i].rect.right;
         rectXButton.bottom = notes[i].rect.top + buttonSize;
+        DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         // 3. Draw the 'X' using rectXButton
-        DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        RECT saveButton;
+        buttonSize = 25;
+        saveButton.left = notes[i].rect.right - buttonSize *2;
+        saveButton.top = notes[i].rect.top;
+        saveButton.right = notes[i].rect.right;
+        saveButton.bottom = notes[i].rect.top + buttonSize *2;
+        DrawText(hdc, "+", 1, &saveButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+
         }
 
 
@@ -612,6 +742,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             notes[noteCount] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
                             notes[noteCount].text[0] = '\0';
                             notes[noteCount].textLen = 0;
+                    //adds blank note       // addToDatabase(&notes[noteCount]);
                             noteCount++;
 							SendMessage(hwnd, WM_SIZE, 0, 0);
 							
@@ -636,6 +767,36 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         //DestroyWindow(hwnd);
         ShowWindow(hwnd, SW_HIDE);
         break;
+
+
+    case WM_APP_SAVE:
+    {
+        LPARAM noteHandle = (LPARAM)lParam;
+        HWND hEdit = GetDlgItem(noteHandle, ID_TEXT);
+        int length = GetWindowTextLength(hEdit);
+        if (length <= 0) break;
+        char* buffer = malloc(length + 1);
+        GetWindowText(hEdit, buffer, length + 1);
+        char sql[512];
+        snprintf(sql, sizeof(sql),
+            "INSERT INTO notes (title, content) VALUES ('New Note', '%s');", buffer);
+
+        char* errmsg = NULL;
+        int rc = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
+        if (rc != SQLITE_OK) {
+            MessageBoxA(hwnd, errmsg ? errmsg : "Database insert failed", "SQLite Error", MB_OK | MB_ICONERROR);
+            sqlite3_free(errmsg);
+        }
+        else {
+            MessageBox(hwnd, "Note saved to database!", "Success", MB_OK);
+        }
+
+       
+
+        free(buffer);
+
+    }
+
     case WM_DESTROY:
     {
         // Only quit if no notes are left
@@ -657,18 +818,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
 {
 	//open db
-	int rc = sqlite3_open("notes.db",&db) ;
-	if(rc!= SQLITE_OK){
-		MessageBox(0,"Failed to open database","Error",MB_ICONERROR);
-		return 0;
-	}
-	
-	    const char *sql =
-        "CREATE TABLE IF NOT EXISTS notes ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "title TEXT, content TEXT);";
-		rc = sqlite3_exec(db,sql,0,0,0);
-	
+    OpenDatabase();
     WNDCLASSEX wc;
     MSG Msg;
 
@@ -731,5 +881,67 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
         TranslateMessage(&Msg);
         DispatchMessage(&Msg);
     }
+   
     return Msg.wParam;
 }
+
+int OpenDatabase(void) {
+    int rc = sqlite3_open("notes.db", &db);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_open failed", MB_OK | MB_ICONERROR);
+        sqlite3_close(db);
+        db = NULL;
+        return rc;
+    }
+
+    const char* create_sql =
+        "CREATE TABLE IF NOT EXISTS notes ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "title TEXT,"
+        "content TEXT,"
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP);";
+
+    char* errmsg = NULL;
+    rc = sqlite3_exec(db, create_sql, NULL, NULL, &errmsg);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, errmsg ? errmsg : "Unknown error", "sqlite3_exec failed", MB_OK | MB_ICONERROR);
+        sqlite3_free(errmsg);
+        sqlite3_close(db);
+        db = NULL;
+        return rc;
+    }
+
+    // Insert a new note
+
+
+
+    // Get ID of last inserted note
+    sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
+
+    // Now fetch it and show in MessageBox
+    sqlite3_stmt* stmt = NULL;
+  /*  const char* select_sql = "SELECT title, content FROM notes WHERE id = ?;";
+
+    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, last_id);
+
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* title = sqlite3_column_text(stmt, 0);
+            const unsigned char* content = sqlite3_column_text(stmt, 1);
+
+            char message[512];
+            snprintf(message, sizeof(message), "Title: %s\nContent: %s", title, content);
+
+            MessageBoxA(NULL, message, "New Note Added", MB_OK);
+        }
+        sqlite3_finalize(stmt);
+    }
+    else {
+        MessageBoxA(NULL, "Failed to prepare SELECT statement", "Error", MB_OK | MB_ICONERROR);
+    }
+    */
+    return SQLITE_OK;
+}
+
+

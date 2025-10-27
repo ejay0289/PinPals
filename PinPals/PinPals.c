@@ -204,16 +204,9 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }
-
-
-
-
-
-
                     }
                 }
                 break;
-           
         }
     }break;
 
@@ -477,8 +470,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         HWND closedChild = (HWND)lParam;
 
-        for (int i = 0; i < noteCount;i++) {
-            if (noteHandles[i] == closedChild) {
+         for (int i = 0; i < noteCount;i++) {
+            if (noteHandles[i] == closedChild && !(notes[i].textLen > 0)) {
                 noteHandles[i] = noteHandles[noteCount - 1];
                     notes[i] = notes[noteCount - 1];             
                     noteCount--;

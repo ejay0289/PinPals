@@ -2,6 +2,8 @@
 #include <windowsx.h>
 #include "Resource.h"
 #include <string.h>
+#include "sqlite3.h"
+#include <stdio.h>
 
 #define CON 0
 //control constants
@@ -32,6 +34,7 @@ char windowTitle[] = "PinPals";
 #define NOTE_HEIGHT 100
 #define NOTE_WIDTH 200
 //Globals
+sqlite3 *db = NULL;
 HWND hmainWindowHandle;
 HWND* noteHandles = NULL;
 int noteCount = 0;
@@ -343,6 +346,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_CREATE:
     {
+		
+		//////////////////////
+		
         RECT rec;
         GetClientRect(hwnd, &rec);
         int windowWidth = rec.right - rec.left;
@@ -650,6 +656,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
 {
+	//open db
+	int rc = sqlite3_open("notes.db",&db) ;
+	if(rc!= SQLITE_OK){
+		MessageBox(0,"Failed to open database","Error",MB_ICONERROR);
+		return 0;
+	}
+	
+	    const char *sql =
+        "CREATE TABLE IF NOT EXISTS notes ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "title TEXT, content TEXT);";
+		rc = sqlite3_exec(db,sql,0,0,0);
+	
     WNDCLASSEX wc;
     MSG Msg;
 

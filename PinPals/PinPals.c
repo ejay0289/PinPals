@@ -20,7 +20,8 @@
 
 //custom messages
 #define WM_APP_NOTE_CLOSED (WM_APP + 1)
-#define WM_APP_NOTE_EDIT (WM_APP + 2)
+#define WM_APP_NOTE_DELETED (WM_APP + 2)
+#define WM_APP_NOTE_EDIT (WM_APP + 3)
 
 //constants
 char windowClass[] = "myWindowClass";
@@ -168,44 +169,11 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 }
 
                 else if (ctrlId == ID_NEW_NOTE_BUTTON) {
-                    HWND note = CreateWindowEx(
-                        0,
-                        myNoteClass,
-                        windowTitle,
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                        CW_USEDEFAULT, CW_USEDEFAULT, 400, 400,
-                        NULL, NULL, GetModuleHandle(NULL), NULL);
-
-                    if (note == NULL) {
-                        MessageBox(hwnd, "Note creation failed", "Error!", MB_OK | MB_ICONERROR);
-                        break;
-                    }
-
-                    HWND* pTemp = realloc(noteHandles, (noteCount + 1) * sizeof(HWND));
-
-                    if (pTemp == NULL) {
-                        DestroyWindow(note);
-                        MessageBox(hwnd, "Memory allocation for note failed", "Error!", MB_OK | MB_ICONERROR);
-                        break;
-                    }
-                    else {
-                        noteHandles = pTemp;
-                        noteHandles[noteCount] = note;
-
-                        notes = realloc(notes, sizeof(struct NoteRectAndHandle) * (noteCount + 1));
-                        if (notes == NULL) {
-                            MessageBox(hwnd, "Memory allocation failed", "!Error", MB_OKCANCEL);
-                            break;
-                        }
-                        else {
-                            notes[noteCount] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
-                           
-                            noteCount++;
-                            RecalculateNotePositions(hwnd);
-                            InvalidateRect(hwnd, NULL, TRUE);
-                            UpdateWindow(hwnd);
-                        }
-                    }
+					WORD ctrlId = ID_NEW_NOTE;
+					WORD notifCode = BN_CLICKED;
+					
+					PostMessage(hmainWindowHandle,WM_COMMAND,MAKELPARAM(ctrlId,notifCode),0);
+					PostMessage(hmainWindowHandle,WM_PAINT,(WPARAM)hwnd,0);
                 }
                 break;
         }
@@ -233,8 +201,12 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }break;
 
     case WM_CLOSE:
-        SendMessage(hmainWindowHandle, WM_APP_NOTE_CLOSED, 0, (LPARAM)hwnd);
-        DestroyWindow(hwnd);
+        SendMessage(hmainWindowHandle, WM_APP_NOTE_CLOSED, (WPARAM)hwnd, (LPARAM)hwnd);
+		//If I destroy I will have to spawn a new window, grab the text(from the
+		//RECT for now until I can get SQLite running) stick it in the edit and somehow reestablish abort
+		//link between the new window and the note
+        //DestroyWindow(hwnd);
+		ShowWindow(hwnd,SW_HIDE);
         break;
     case WM_DESTROY:
         break;
@@ -258,15 +230,26 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		ptClick.x = GET_X_LPARAM(lParam);
 		ptClick.y = GET_Y_LPARAM(lParam);
 		
-		char buffer[64];
-		
 		for(int i = 0; i < noteCount; i++)
 		{
+							RECT rectXButton;
+            int buttonSize = 15;
+            rectXButton.left   = notes[i].rect.right - buttonSize;
+            rectXButton.top    = notes[i].rect.top;
+            rectXButton.right  = notes[i].rect.right;
+            rectXButton.bottom = notes[i].rect.top + buttonSize;
+			
 			if(PtInRect(&notes[i].rect,ptClick))
 			{
-				//sprintf(buffer, sizeof(buffer), "Clicked Note Handle: %p", notes[i].hwnd);
-				MessageBox(hwnd,notes[i].text,"Clicked",MB_OK);
-				break;
+
+			if (PtInRect(&rectXButton, ptClick))
+            {
+				SendMessage(hwnd,WM_APP_NOTE_DELETED,(WPARAM)notes[i].hwnd,(LPARAM)notes[i].hwnd);
+                break;
+            }		
+			
+			ShowWindow(notes[i].hwnd,SW_SHOW);
+			break;
 			}
 		}
 	}break;
@@ -475,6 +458,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     &textRect,
                     DT_LEFT | DT_TOP | DT_WORDBREAK);
             }
+			RECT rectXButton;
+        int buttonSize = 15;
+        rectXButton.left   = notes[i].rect.right - buttonSize;
+        rectXButton.top    = notes[i].rect.top;
+        rectXButton.right  = notes[i].rect.right;
+        rectXButton.bottom = notes[i].rect.top + buttonSize;
+
+        // 3. Draw the 'X' using rectXButton
+        DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
 
 
@@ -489,33 +481,67 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_APP_NOTE_CLOSED:
     {
-        HWND closedChild = (HWND)lParam;
-
-         for (int i = 0; i < noteCount;i++) {
-            if (noteHandles[i] == closedChild && !(notes[i].textLen > 0)) {
-                noteHandles[i] = noteHandles[noteCount - 1];
-                    notes[i] = notes[noteCount - 1];             
-                    noteCount--;
-
-                if (noteCount > 0) {
-                    struct NoteRectAndHandle* pTempNotes = realloc(notes, noteCount * sizeof(struct NoteRectAndHandle));
-                    if (pTempNotes != NULL) notes = pTempNotes;
-                    HWND* pTemp = realloc(noteHandles, noteCount * sizeof(HWND));
-                    if (pTemp != NULL) noteHandles = pTemp;
-                }
-                else {
-                    free(notes);
-                    notes = NULL;
-                    free(noteHandles);
-                    noteHandles = NULL;
-                }
-                RecalculateNotePositions(hwnd);
-
-                InvalidateRect(hwnd, NULL, TRUE);
-                break;
-            }
-
-        }
+        HWND noteChild = (HWND)lParam;
+			//delete child note RECT from memory
+			for (int i = 0; i < noteCount;i++) {
+			if (notes[i].hwnd == noteChild && !(notes[i].textLen>0)) {
+				noteHandles[i] = noteHandles[noteCount - 1];
+					notes[i] = notes[noteCount - 1];             
+					noteCount--;
+			
+				if (noteCount > 0) {
+					struct NoteRectAndHandle* pTempNotes = realloc(notes, noteCount * sizeof(struct NoteRectAndHandle));
+					if (pTempNotes != NULL) notes = pTempNotes;
+					HWND* pTemp = realloc(noteHandles, noteCount * sizeof(HWND));
+					if (pTemp != NULL) noteHandles = pTemp;
+				}
+				else {
+					free(notes);
+					notes = NULL;
+					free(noteHandles);
+					noteHandles = NULL;
+				}
+				RecalculateNotePositions(hwnd);
+			
+				InvalidateRect(hwnd, NULL, TRUE);
+				break;
+			}
+			
+		
+		}
+    }break;
+	
+	case WM_APP_NOTE_DELETED:
+    {
+        HWND noteChild = (HWND)lParam;
+			//delete child note RECT from memory
+			DestroyWindow(noteChild);
+			for (int i = 0; i < noteCount;i++) {
+			if (notes[i].hwnd == noteChild) {
+				noteHandles[i] = noteHandles[noteCount - 1];
+					notes[i] = notes[noteCount - 1];             
+					noteCount--;
+			
+				if (noteCount > 0) {
+					struct NoteRectAndHandle* pTempNotes = realloc(notes, noteCount * sizeof(struct NoteRectAndHandle));
+					if (pTempNotes != NULL) notes = pTempNotes;
+					HWND* pTemp = realloc(noteHandles, noteCount * sizeof(HWND));
+					if (pTemp != NULL) noteHandles = pTemp;
+				}
+				else {
+					free(notes);
+					notes = NULL;
+					free(noteHandles);
+					noteHandles = NULL;
+				}
+				RecalculateNotePositions(hwnd);
+			
+				InvalidateRect(hwnd, NULL, TRUE);
+				break;
+			}
+			
+		
+		}
     }break;
 
 
@@ -560,27 +586,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             break;
                         }
                         else {
+							//TODO:Shift all notes up an index and place new note at index 0;
+							 
+								/* if(noteCount > 0){
+									for(int i = 0; i < noteCount; i++)
+									{
+										notes[i + 1] = notes[i];
+										notes[i] = (struct NoteRectAndHandle){0};
+									}
+									notes[0] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
+									notes[0].text[0] = '\0';
+									notes[0].textLen = 0;
+									//must reverse deleting order too
+									
+									//remaining code is fine
+								} */
+							
+							
                             notes[noteCount] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
                             notes[noteCount].text[0] = '\0';
                             notes[noteCount].textLen = 0;
-
-                            int x = NOTE_MARGIN;
-                            int y = (NOTE_HEIGHT + 2 * NOTE_MARGIN) * noteCount;
-                            
-                            //UNCOMMENT THIS IF BROKEN
-
-                               // notes[noteCount].rect.left = x;
-                               // notes[noteCount].rect.top = y;
-                               // notes[noteCount].rect.right = x + NOTE_HEIGHT;
-                                //notes[noteCount].rect.bottom = y + NOTE_HEIGHT;
-
-                                //y += NOTE_SIZE + NOTE_MARGIN; // stack vertically
-                            
                             noteCount++;
+							SendMessage(hwnd, WM_SIZE, 0, 0);
+							
                             RecalculateNotePositions(hwnd);
-
-                            InvalidateRect(hwnd, NULL, TRUE);
-                            SendMessage(hwnd, WM_SIZE, 0, 0);
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }

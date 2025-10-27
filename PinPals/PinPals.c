@@ -72,7 +72,7 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 
-void RecalculateNotePositions(HWND hwnd) {
+static void RecalculateNotePositions(HWND hwnd) {
     int x = NOTE_MARGIN;
     int y = NOTE_MARGIN;
     int totalContentHeight = 0;

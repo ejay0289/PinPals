@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <windowsx.h>
 #include "Resource.h"
 #include <string.h>
 
@@ -27,8 +28,8 @@ char myNoteClass[] = "myNoteclass";
 char windowTitle[] = "PinPals";
 #define MAX_NOTE_TEXT_LEN 1024
 #define NOTE_MARGIN 10
-#define NOTE_HEIGHT 50
-#define NOTE_WIDTH 150
+#define NOTE_HEIGHT 100
+#define NOTE_WIDTH 200
 //Globals
 HWND hmainWindowHandle;
 HWND* noteHandles = NULL;
@@ -249,6 +250,26 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     switch (msg)
     {
+		
+		
+	case WM_LBUTTONDOWN:
+	{
+		POINT ptClick;
+		ptClick.x = GET_X_LPARAM(lParam);
+		ptClick.y = GET_Y_LPARAM(lParam);
+		
+		char buffer[64];
+		
+		for(int i = 0; i < noteCount; i++)
+		{
+			if(PtInRect(&notes[i].rect,ptClick))
+			{
+				//sprintf(buffer, sizeof(buffer), "Clicked Note Handle: %p", notes[i].hwnd);
+				MessageBox(hwnd,notes[i].text,"Clicked",MB_OK);
+				break;
+			}
+		}
+	}break;
 
     case WM_APP_NOTE_EDIT:
     {

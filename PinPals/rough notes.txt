@@ -1,17 +1,12 @@
-//TODO implementation of click RECT to open main window
+//I have a RECT
 
 
 
 
-____________________
-|				    |
-|				    |
-|				    |
-|				    |
-|				    |
-|				    |					
-|___________________|
 
+
+
+//click on the rect opens an edit window with the currect value of the note as well as it's id
 
 
 

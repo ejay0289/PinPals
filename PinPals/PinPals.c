@@ -1,9 +1,12 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <windowsx.h>
 #include "Resource.h"
 #include <string.h>
 #include "sqlite3.h"
 #include <stdio.h>
+
+#include "PinPals.h"
 
 #define CON 0
 //control constants
@@ -14,6 +17,7 @@
 #define ID_NEW_NOTE_BUTTON 3004
 #define ID_SHOW_ALL_NOTES_BUTTON 3005
 #define ID_CLOSE_ALL_BUTTON 3006
+#define ID_SAVE_NOTE_BUTTON 3007
 
 //Per note offsets for cbWndExtra
 #define NOTE_HANDLE 0
@@ -24,158 +28,25 @@
 #define WM_APP_NOTE_DELETED (WM_APP + 2)
 #define WM_APP_NOTE_EDIT (WM_APP + 3)
 #define WM_APP_SAVE (WM_APP + 4)
+#define WM_APP_CALL_UPDATE_WINDOW (WM_APP + 5)
 
 //constants
 char windowClass[] = "myWindowClass";
 char myNoteClass[] = "myNoteclass";
 char windowTitle[] = "PinPals";
-#define MAX_NOTE_TEXT_LEN 1024
 #define NOTE_MARGIN 10
 #define NOTE_HEIGHT 100
 #define NOTE_WIDTH 200
 //Globals
-int getNoteCount(sqlite3* db) {
-    sqlite3_stmt* stmt;
-    int count = 0;
-    const char* sql = "SELECT COUNT(*) FROM notes;";
-
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            count = sqlite3_column_int(stmt, 0);
-        }
-        sqlite3_finalize(stmt);
-    }
-    return count;
-}
-
-
 sqlite3 *db = NULL;
 HWND hmainWindowHandle;
-HWND* noteHandles = NULL;
 int noteCount = 0;
+//int tempNoteCount = 0;
 int scrollPos = 0;
-
-struct Note {
-    RECT rect;
-    char title[50];
-    char text[MAX_NOTE_TEXT_LEN];
-};
-
-struct NoteRectAndHandle {
-    HWND hwnd;
-    RECT rect;
-    char text[MAX_NOTE_TEXT_LEN];
-    int textLen;
-    int noteId;
-};
-struct NoteRectAndHandle* notes = NULL;
 struct Note* notes_true = NULL;
+struct Note* notes_unsaved = NULL;
 
-int addToDatabase(struct NoteRectAndHandle* note)
-{
-    int rc;
-    sqlite3_stmt* stmt;
-    char* errmsg = NULL;
 
-    const char* insert_sql =
-        "INSERT INTO notes (title, content) VALUES (?, ?);";
-
-    // Prepare the SQL statement
-    rc = sqlite3_prepare_v2(db, insert_sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        MessageBoxA(NULL, sqlite3_errmsg(db), "Prepare failed", MB_OK | MB_ICONERROR);
-        return rc;
-    }
-
-    // Bind title and content dynamically
-    sqlite3_bind_text(stmt, 1, "New note", -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, note->text, -1, SQLITE_TRANSIENT);
-
-    // Execute the INSERT
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        MessageBoxA(NULL, "Failed to insert note", "Error", MB_OK | MB_ICONERROR);
-        return rc;
-    }
-
-    // Get the last inserted ID
-    sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
-
-    // Retrieve the inserted note and show it
-    const char* select_sql =
-        "SELECT title, content FROM notes WHERE id = ?;";
-
-    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
-    if (rc == SQLITE_OK) {
-        sqlite3_bind_int64(stmt, 1, last_id);
-
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            const unsigned char* title = sqlite3_column_text(stmt, 0);
-            const unsigned char* content = sqlite3_column_text(stmt, 1);
-
-            char message[512];
-            snprintf(message, sizeof(message), "Title: %s\nContent: %s", title, content);
-            //MessageBoxA(NULL, message, "Note Added", MB_OK);
-        }
-        sqlite3_finalize(stmt);
-    }
-    else {
-        MessageBoxA(NULL, "Failed to prepare SELECT", "Error", MB_OK | MB_ICONERROR);
-    }
-    note->noteId= (int)last_id;
-    char buffer[64];
-
-    snprintf( // Use snprintf for char (not swprintf_s)
-        buffer,
-        sizeof(buffer), // Use sizeof for char array size
-        "The value is: %d",
-        note->noteId
-    );
-
-    MessageBox(
-        NULL,               // Owner window handle
-        buffer,             // The buffer containing the formatted string
-        "C-Style Output",
-        MB_OK
-    );
-    return SQLITE_OK;
-}
-char* getDatabaseEntry(int noteId) {
-    if (!db) {
-        MessageBox(NULL, "Database not open", "Error", MB_OK | MB_ICONERROR);
-        return NULL;
-    }
-
-    const char* sql = "SELECT content FROM notes WHERE id = ?;";
-    sqlite3_stmt* stmt = NULL;
-
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_prepare_v2 failed", MB_OK | MB_ICONERROR);
-        return NULL;
-    }
-
-    // Bind the note ID
-    sqlite3_bind_int(stmt, 1, noteId);
-
-    char* result = NULL;
-
-    rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
-        const unsigned char* text = sqlite3_column_text(stmt, 0);
-        if (text) {
-            result = _strdup((const char*)text); // or strdup if not using MSVC
-        }
-    }
-    else if (rc != SQLITE_DONE) {
-        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_step failed", MB_OK | MB_ICONERROR);
-    }
-
-    sqlite3_finalize(stmt);
-    return result; // caller must free(result)
-}
 
 // Define the original procedure globally
 WNDPROC g_OriginalEditProc = NULL;
@@ -205,26 +76,6 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 
-static void RecalculateNotePositions(HWND hwnd) {
-    int x = NOTE_MARGIN;
-    int y = NOTE_MARGIN;
-    int totalContentHeight = 0;
-
-    for (int i = 0; i < noteCount; i++)
-    {
-        notes[i].rect.left = x;
-        notes[i].rect.top = y;
-
-        notes[i].rect.right = x + NOTE_WIDTH;
-        notes[i].rect.bottom = y + NOTE_HEIGHT;
-
-        y += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
-    }
-    
-    RECT client;
-    GetClientRect(hwnd, &client);
-    SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(client.right - client.left, client.bottom - client.top));
-}
 
 LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {   
@@ -242,14 +93,18 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         );
 
 
+        HWND newNoteButton = CreateWindowEx(
+            0, "BUTTON", "New", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            0, 50, 50, 50, hwnd, (HMENU)ID_NEW_NOTE_BUTTON, GetModuleHandle(0), NULL
+        );
         HWND showAllNotes = CreateWindowEx(
             0, "BUTTON", "Show all", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             0, 100, 50, 50, hwnd, (HMENU)ID_SHOW_ALL_NOTES_BUTTON, GetModuleHandle(0), NULL
         );
 
-        HWND newNoteButton = CreateWindowEx(
-            0, "BUTTON", "New", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            0, 50, 50, 50, hwnd, (HMENU)ID_NEW_NOTE_BUTTON, GetModuleHandle(0), NULL
+        HWND saveButton = CreateWindowEx(
+            0, "BUTTON", "Save", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            0, 150, 50, 50, hwnd, (HMENU)ID_SAVE_NOTE_BUTTON, GetModuleHandle(0), NULL
         );
 
         HWND textArea = CreateWindowEx(
@@ -258,6 +113,7 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             0, 0, 100, 100, hwnd, (HMENU)ID_TEXT, GetModuleHandle(NULL),
             NULL
         );
+
         HFONT hfDefault = GetStockObject(DEFAULT_GUI_FONT);
         SendMessage(textArea, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
         SetWindowLongPtr(hwnd, 0, (LONG_PTR)textArea);
@@ -306,6 +162,11 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					PostMessage(hmainWindowHandle,WM_COMMAND,MAKELPARAM(ctrlId,notifCode),0);
 					PostMessage(hmainWindowHandle,WM_PAINT,(WPARAM)hwnd,0);
                 }
+
+                else if(ctrlId == ID_SAVE_NOTE_BUTTON){
+                    SendMessage(hmainWindowHandle, WM_APP_SAVE, (WPARAM)hwnd, (LPARAM)hwnd);
+                }
+                
                 break;
         }
     }break;
@@ -347,8 +208,14 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+
+
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    static char* idIsPresent = NULL;
+    static int noteUpdateId = 0;
+
 
 
     switch (msg)
@@ -365,35 +232,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		{
 			RECT rectXButton;
             int buttonSize = 15;
-            rectXButton.left   = notes[i].rect.right - buttonSize;
-            rectXButton.top    = notes[i].rect.top;
-            rectXButton.right  = notes[i].rect.right;
-            rectXButton.bottom = notes[i].rect.top + buttonSize;
-
-
-            RECT saveButton;
-            buttonSize = 25;
-            saveButton.left = notes[i].rect.right - buttonSize * 2;
-            saveButton.top = notes[i].rect.top;
-            saveButton.right = notes[i].rect.right;
-            saveButton.bottom = notes[i].rect.top + buttonSize * 2;
+            rectXButton.left   = notes_true[i].rect.right - buttonSize;
+            rectXButton.top    = notes_true[i].rect.top;
+            rectXButton.right  = notes_true[i].rect.right;
+            rectXButton.bottom = notes_true[i].rect.top + buttonSize;
 			
-			if(PtInRect(&notes[i].rect,ptClick))
-			{
-
-			if (PtInRect(&rectXButton, ptClick))
+            if (PtInRect(&rectXButton, ptClick))
             {
-				SendMessage(hwnd,WM_APP_NOTE_DELETED,(WPARAM)notes[i].hwnd,(LPARAM)notes[i].hwnd);
-                break;
-            }	
-
-            if (PtInRect(&saveButton, ptClick))
-            {
-                SendMessage(hwnd, WM_APP_SAVE, (WPARAM)notes[i].hwnd, (LPARAM)notes[i].hwnd);
+                SendMessage(hwnd, WM_APP_NOTE_DELETED, (WPARAM)notes_true[i].id, (LPARAM)notes_true[i].id);
                 break;
             }
-			
-			ShowWindow(notes[i].hwnd,SW_SHOW);
+
+			if(PtInRect(&notes_true[i].rect,ptClick) && PtInRect(&notes_true[i].rect, ptClick))
+			{
+                int noteId = notes_true[i].id;
+                int noteLength = notes_true[i].textLen;
+                SendMessage(hwnd, WM_APP_CALL_UPDATE_WINDOW, (WPARAM)noteId, (LPARAM)noteLength);
+				//ShowWindow(notes_true[i].hwnd,SW_SHOW);
 			break;
 			}
 		}
@@ -407,31 +262,31 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // 1. Find the corresponding NoteRectAndHandle structure
         for (int i = 0; i < noteCount; i++)
         {
-            if (notes[i].hwnd == hNoteParent)
+            if (notes_true[i].text == hNoteParent)
             {
                 // 2. Update the text buffer based on the character
-                int currentLen = notes[i].textLen;
+                int currentLen = notes_true[i].textLen;
 
                 if (charTyped == '\b')
                 {
                     if (currentLen > 0)
                     {
-                        notes[i].text[currentLen - 1] = '\0'; // Null-terminate the new end
-                        notes[i].textLen = currentLen - 1;
+                        notes_true[i].text[currentLen - 1] = '\0'; // Null-terminate the new end
+                        notes_true[i].textLen = currentLen - 1;
                     }
                 }
                 else 
                 {
                     if (currentLen < MAX_NOTE_TEXT_LEN - 1)
                     {
-                        notes[i].text[currentLen] = charTyped;
-                        notes[i].text[currentLen + 1] = '\0'; // Null-terminate
-                        notes[i].textLen = currentLen + 1;
+                        notes_true[i].text[currentLen] = charTyped;
+                        notes_true[i].text[currentLen + 1] = '\0'; // Null-terminate
+                        notes_true[i].textLen = currentLen + 1;
                     }
                 }
 
                 // 3. Force the main window to redraw (where the RECTs are drawn)
-                InvalidateRect(hwnd, &notes[i].rect, TRUE);
+                InvalidateRect(hwnd, &notes_true[i].rect, TRUE);
                 UpdateWindow(hwnd);
 
                 break; // Found and processed the note, exit loop
@@ -449,7 +304,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
        
        int totalContentHeight = (noteCount > 8)
-           ? notes[noteCount - 1].rect.bottom + NOTE_MARGIN // Bottom of last note + final margin
+           ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN // Bottom of last note + final margin
            : 0;
 
        SCROLLINFO si = { 0 };
@@ -497,12 +352,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             noteCount
         );
 
-        MessageBox(
-            NULL,               // Owner window handle
-            buffer,             // The buffer containing the formatted string
-            "C-Style Output",
-            MB_OK
-        );
+  
 		
 		//////////////////////
 		
@@ -550,7 +400,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         int windowHeight = rect.bottom - rect.top;
 
         int totalContentHeight = (noteCount > 0)
-            ? notes[noteCount - 1].rect.bottom + NOTE_MARGIN
+            ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN
             : 0;
         int maxScroll = max(0, totalContentHeight - windowHeight);
 
@@ -605,36 +455,29 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrush);
         SetBkMode(hdc, TRANSPARENT);
 
-
-        //This somehow works
-    /*    RECT rect = {10, 10, 210, 110};
-
-        for (int i = 0; i < noteCount; i++) {
-            char* content = getDatabaseEntry(i);
-
-            DrawTextA(
-                hdc,
-                content,
-                -1,
-                &rect,
-                DT_LEFT | DT_TOP | DT_WORDBREAK
-            );
-
-            rect.top += 120;
-            rect.bottom += 120;
-        }*/
-        //SUPER IMPORTANT
-        //
-        //
               // Draw all notes is completely broken
-        for (int i = 1; i < 8; i++)
+
+        int theY = NOTE_MARGIN;
+
+        for (int i = 0; i < noteCount; i++)
         {
-            Rectangle(hdc, notes[i].rect.left, notes[i].rect.top, notes[i].rect.right, notes[i].rect.bottom);
-            RECT textRect = notes[i].rect;
+            notes_true[i].rect.left = NOTE_MARGIN;
+            notes_true[i].rect.top = theY;
+            notes_true[i].rect.right = NOTE_MARGIN + NOTE_WIDTH;
+            notes_true[i].rect.bottom = theY + NOTE_HEIGHT;
+            theY += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
+
+        }
+
+    //Draw notes to main window
+        for (int i = 0; i < noteCount; i++)
+        {
+            Rectangle(hdc, notes_true[i].rect.left, notes_true[i].rect.top, notes_true[i].rect.right, notes_true[i].rect.bottom);
+            RECT textRect = notes_true[i].rect;
             InflateRect(&textRect, -5, -5);
 
             // fetch content from DB using each note's unique ID
-            char* content = getDatabaseEntry(i);
+            char* content = getDatabaseEntry(notes_true[i].id);
             if (content) {
                 DrawTextA(
                     hdc,
@@ -656,27 +499,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
   
 			RECT rectXButton;
-        int buttonSize = 15;
-        rectXButton.left   = notes[i].rect.right - buttonSize;
-        rectXButton.top    = notes[i].rect.top;
-        rectXButton.right  = notes[i].rect.right;
-        rectXButton.bottom = notes[i].rect.top + buttonSize;
-        DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-        // 3. Draw the 'X' using rectXButton
-        RECT saveButton;
-        buttonSize = 25;
-        saveButton.left = notes[i].rect.right - buttonSize *2;
-        saveButton.top = notes[i].rect.top;
-        saveButton.right = notes[i].rect.right;
-        saveButton.bottom = notes[i].rect.top + buttonSize *2;
-        DrawText(hdc, "+", 1, &saveButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            int buttonSize = 15;
+            rectXButton.left   = notes_true[i].rect.right - buttonSize;
+            rectXButton.top    = notes_true[i].rect.top;
+            rectXButton.right  = notes_true[i].rect.right;
+            rectXButton.bottom = notes_true[i].rect.top + buttonSize;
+            DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         }
-        
-
-
-       
+               
         // Cleanup
         SelectObject(hdc, oldBrush);
         DeleteObject(hBrush);
@@ -685,70 +516,64 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
     break;
 
-    case WM_APP_NOTE_CLOSED:
+    case WM_APP_CALL_UPDATE_WINDOW:
     {
-        HWND noteChild = (HWND)lParam;
-			//delete child note RECT from memory
-			for (int i = 0; i < noteCount;i++) {
-			if (notes[i].hwnd == noteChild && !(notes[i].textLen>0)) {
-				noteHandles[i] = noteHandles[noteCount - 1];
-					notes[i] = notes[noteCount - 1];             
-					noteCount--;
-			
-				if (noteCount > 0) {
-					struct NoteRectAndHandle* pTempNotes = realloc(notes, noteCount * sizeof(struct NoteRectAndHandle));
-					if (pTempNotes != NULL) notes = pTempNotes;
-					HWND* pTemp = realloc(noteHandles, noteCount * sizeof(HWND));
-					if (pTemp != NULL) noteHandles = pTemp;
-				}
-				else {
-					free(notes);
-					notes = NULL;
-					free(noteHandles);
-					noteHandles = NULL;
-				}
-				RecalculateNotePositions(hwnd);
-			
-				InvalidateRect(hwnd, NULL, TRUE);
-				break;
-			}
-			
-		
-		}
+
+        int noteId = (int)wParam;
+        char* noteValue = getDatabaseEntry(noteId);
+        HWND editNote = CreateWindowEx(
+            0,
+            myNoteClass,
+            windowTitle,
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            CW_USEDEFAULT, CW_USEDEFAULT, 400, 400,
+            NULL, NULL, GetModuleHandle(NULL), NULL);
+        int hEdit = GetDlgItem(editNote, ID_TEXT);
+        if (hEdit && noteValue) {
+            SetWindowText(hEdit, noteValue);
+}
+                
+        idIsPresent = getDatabaseEntry(noteId);
+        noteUpdateId = noteId;
+        free(noteValue);
+        noteValue = NULL;
+
     }break;
 	
 	case WM_APP_NOTE_DELETED:
     {
-        HWND noteChild = (HWND)lParam;
-			//delete child note RECT from memory
-			DestroyWindow(noteChild);
-			for (int i = 0; i < noteCount;i++) {
-			if (notes[i].hwnd == noteChild) {
-				noteHandles[i] = noteHandles[noteCount - 1];
-					notes[i] = notes[noteCount - 1];             
-					noteCount--;
-			
-				if (noteCount > 0) {
-					struct NoteRectAndHandle* pTempNotes = realloc(notes, noteCount * sizeof(struct NoteRectAndHandle));
-					if (pTempNotes != NULL) notes = pTempNotes;
-					HWND* pTemp = realloc(noteHandles, noteCount * sizeof(HWND));
-					if (pTemp != NULL) noteHandles = pTemp;
-				}
-				else {
-					free(notes);
-					notes = NULL;
-					free(noteHandles);
-					noteHandles = NULL;
-				}
-				RecalculateNotePositions(hwnd);
-			
-				InvalidateRect(hwnd, NULL, TRUE);
-				break;
-			}
-			
-		
-		}
-    }break;
+        int noteId = (int)lParam;
+
+        for (int i = 0; i < noteCount; i++) {
+            if (notes_true[i].id == noteId) {
+
+                // Delete from DB
+                deleteNoteFromDatabase(noteId);
+                for (int j = i; j < noteCount - 1; j++) {
+                    notes_true[j] = notes_true[j + 1];
+                }
+                // Replace deleted element with last
+                //notes_true[i] = notes_true[noteCount - 1];
+                noteCount--;
+
+                if (noteCount > 0) {
+                    struct Note* pTempNotes = realloc(notes_true, noteCount * sizeof(struct Note));
+                    if (pTempNotes != NULL) notes_true = pTempNotes;
+                    
+                }
+                else {
+                    free(notes_true);
+                    notes_true = NULL;
+
+                }
+
+                RecalculateNotePositions(hwnd);
+                InvalidateRect(hwnd, NULL, TRUE);
+                break;
+            }
+        }
+    }
+    break;
 
 
     case WM_COMMAND:
@@ -774,44 +599,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         MessageBox(hwnd, "Note creation failed", "Error!", MB_OK | MB_ICONERROR);
                         break;
                     }
-
-                    HWND* pTemp = realloc(noteHandles, (noteCount + 1) * sizeof(HWND));
-
-                    if (pTemp == NULL) {
-                        DestroyWindow(note);
-                        MessageBox(hwnd, "Memory allocation for note failed", "Error!", MB_OK | MB_ICONERROR);
-                        break;
-                    }
-                    else{
-                        noteHandles = pTemp;
-                        noteHandles[noteCount] = note;
                         
-                        notes = realloc(notes, sizeof(struct NoteRectAndHandle) * (noteCount + 1));
-                        if (notes == NULL) {
+                        notes_true = realloc(notes_true, sizeof(struct Note) * (noteCount + 1));
+                        if (notes_true == NULL) {
                             MessageBox(hwnd, "Memory allocation failed", "!Error", MB_OKCANCEL);
                             break;
                         }
                         else {
 							//TODO:Shift all notes up an index and place new note at index 0;
-							 
-								/* if(noteCount > 0){
-									for(int i = 0; i < noteCount; i++)
-									{
-										notes[i + 1] = notes[i];
-										notes[i] = (struct NoteRectAndHandle){0};
-									}
-									notes[0] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
-									notes[0].text[0] = '\0';
-									notes[0].textLen = 0;
-									//must reverse deleting order too
-									
-									//remaining code is fine
-								} */
-							
-							
-                            notes[noteCount] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
-                            notes[noteCount].text[0] = '\0';
-                            notes[noteCount].textLen = 0;
+			
+                            notes_true[noteCount] = (struct Note){0};
+                            
+                            //notes[noteCount].textLen = 0;
                   
                             noteCount++;
 							SendMessage(hwnd, WM_SIZE, 0, 0);
@@ -820,14 +619,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }
-                    }
+                    //}
                     
 
         }
         else if (ctrlId == ID_CLOSE_ALL_BUTTON) {
-            free(noteHandles);
-            free(notes);
+            free(notes_true);
+            sqlite3_close(db);
             PostQuitMessage(0);
+        }
+        
+        else if (ctrlId == ID_SAVE_NOTE_BUTTON) {
+            SendMessage(hmainWindowHandle,WM_APP_SAVE, (WPARAM)hwnd, (LPARAM)hwnd);
         }break;
             }
         }
@@ -848,35 +651,49 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         char* buffer = malloc(length + 1);
         GetWindowText(hEdit, buffer, length + 1);
         char sql[512];
-        snprintf(sql, sizeof(sql),
-            "INSERT INTO notes (title, content) VALUES ('New Note', '%s');", buffer);
 
-        char* errmsg = NULL;
-        int rc = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
-        if (rc != SQLITE_OK) {
-            MessageBoxA(hwnd, errmsg ? errmsg : "Database insert failed", "SQLite Error", MB_OK | MB_ICONERROR);
-            sqlite3_free(errmsg);
+
+
+        if (idIsPresent) {
+            updateDatabaseEntry(noteUpdateId, buffer);
         }
         else {
-            MessageBox(hwnd, "Note saved to database!", "Success", MB_OK);
+            snprintf(sql, sizeof(sql),
+                "INSERT INTO notes (title, content) VALUES ('New Note', '%s');", buffer);
+
+            char* errmsg = NULL;
+            int rc = sqlite3_exec(db, sql, NULL, NULL, &errmsg);
+
+            if (rc != SQLITE_OK) {
+                MessageBoxA(hwnd, errmsg ? errmsg : "Database insert failed", "SQLite Error", MB_OK | MB_ICONERROR);
+                sqlite3_free(errmsg);
+            }
+            else {
+                sqlite3_int64 lastId = sqlite3_last_insert_rowid(db);
+                notes_true[noteCount - 1].id = (int)lastId;
+                strncpy_s(notes_true[noteCount - 1].title, sizeof(notes_true[noteCount - 1].title), "New Note", _TRUNCATE);
+                strncpy_s(notes_true[noteCount - 1].text, sizeof(notes_true[noteCount - 1].text), buffer, _TRUNCATE);
+                notes_true[noteCount - 1].textLen = length;
+                notes_true[noteCount - 1].rect = (RECT){ 0,0,0,0 };
+            }
         }
 
-       
+
+
+        RecalculateNotePositions(hwnd);
+        InvalidateRect(hwnd, NULL, TRUE);
+        UpdateWindow(hwnd);
+
 
         free(buffer);
 
-    }
+    }break;
 
     case WM_DESTROY:
     {
         // Only quit if no notes are left
-        for (int i = 0; i < noteCount; i++)
-        {
-            if (IsWindow(noteHandles[i]))
-                return 0;  // leave message loop running
-        }
-        free(noteHandles);
-        PostQuitMessage(0);
+        if(noteCount == 0)
+            PostQuitMessage(0);
     }
         break;
     default:
@@ -888,23 +705,43 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
 {
 	//open db
-    OpenDatabase();
+   OpenDatabase();
    noteCount = getNoteCount(db);
-   notes_true = malloc(sizeof(struct NoteRectAndHandle) * 10) ;
+   notes_true = malloc(sizeof(struct Note) * noteCount) ;
 
    char* content;
-   RECT rect;
-   rect.left = 10;
-   rect.top = 10;
-   rect.right = 210;
-   rect.bottom =  110;
+   RECT rect = { 10, 10, 210, 110 };
 
+   sqlite3_stmt* stmt;
+   const char* sql = "SELECT id, title, content FROM notes;";
 
-   for(int i = 0; i < noteCount; i++){
-       content = getDatabaseEntry(i);
-       notes[i] = (struct NoteRectAndHandle){0,rect,20,content};
-
+   if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+       MessageBoxA(NULL, sqlite3_errmsg(db), "Failed to prepare select", MB_OK | MB_ICONERROR);
    }
+   else {
+       int i = 0;
+       while (sqlite3_step(stmt) == SQLITE_ROW) {
+           int id = sqlite3_column_int(stmt, 0);
+           if (i >= noteCount) {
+               // This is an unexpected state if noteCount was correctly calculated.
+               // You would need realloc here if you weren't relying on the initial count.
+               break;
+           }
+           const unsigned char* title = sqlite3_column_text(stmt, 1);
+           const unsigned char* content = sqlite3_column_text(stmt, 2);
+
+
+           notes_true[i].id = id; // <- store the actual DB ID
+           strncpy_s(notes_true[i].title, sizeof(notes_true[i].title), (const char*)title, _TRUNCATE);
+           strncpy_s(notes_true[i].text, sizeof(notes_true[i].text), (const char*)content, _TRUNCATE);
+           notes_true[i].textLen = (int)strlen((const char*)content);
+           notes_true[i].rect = rect;
+
+           i++;
+       }
+       sqlite3_finalize(stmt);
+   }
+ 
     WNDCLASSEX wc;
     MSG Msg;
 
@@ -971,6 +808,20 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     return Msg.wParam;
 }
 
+int getNoteCount(sqlite3* db) {
+    sqlite3_stmt* stmt;
+    int count = 0;
+    const char* sql = "SELECT COUNT(*) FROM notes;";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            count = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    return count;
+}
+
 int OpenDatabase(void) {
     int rc = sqlite3_open("notes.db", &db);
     if (rc != SQLITE_OK) {
@@ -1002,3 +853,180 @@ int OpenDatabase(void) {
 }
 
 
+int addToDatabase(struct Note* note)
+{
+    int rc;
+    sqlite3_stmt* stmt;
+    char* errmsg = NULL;
+
+    const char* insert_sql =
+        "INSERT INTO notes (title, content) VALUES (?, ?);";
+
+    // Prepare the SQL statement
+    rc = sqlite3_prepare_v2(db, insert_sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "Prepare failed", MB_OK | MB_ICONERROR);
+        return rc;
+    }
+
+    // Bind title and content dynamically
+    sqlite3_bind_text(stmt, 1, "New note", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, note->text, -1, SQLITE_TRANSIENT);
+
+    // Execute the INSERT
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        MessageBoxA(NULL, "Failed to insert note", "Error", MB_OK | MB_ICONERROR);
+        return rc;
+    }
+
+    // Get the last inserted ID
+    sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
+
+    // Retrieve the inserted note and show it
+    const char* select_sql =
+        "SELECT title, content FROM notes WHERE id = ?;";
+
+    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, last_id);
+
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* title = sqlite3_column_text(stmt, 0);
+            const unsigned char* content = sqlite3_column_text(stmt, 1);
+
+            char message[512];
+            snprintf(message, sizeof(message), "Title: %s\nContent: %s", title, content);
+            //MessageBoxA(NULL, message, "Note Added", MB_OK);
+        }
+        sqlite3_finalize(stmt);
+    }
+    else {
+        MessageBoxA(NULL, "Failed to prepare SELECT", "Error", MB_OK | MB_ICONERROR);
+    }
+    note->id = (int)last_id;
+    char buffer[64];
+
+    snprintf( // Use snprintf for char (not swprintf_s)
+        buffer,
+        sizeof(buffer), // Use sizeof for char array size
+        "The value is: %d",
+        note->id
+    );
+    return SQLITE_OK;
+}
+
+void deleteNoteFromDatabase(int noteId) {
+    if (!db) return;
+
+    sqlite3_stmt* stmt = NULL;
+    const char* sql = "DELETE FROM notes WHERE id = ?;";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "Prepare failed", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, noteId);
+
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "Delete failed", MB_OK | MB_ICONERROR);
+    }
+
+    sqlite3_finalize(stmt);
+}
+
+char* getDatabaseEntry(int noteId) {
+    if (!db) {
+        MessageBox(NULL, "Database not open", "Error", MB_OK | MB_ICONERROR);
+        return NULL;
+    }
+
+    const char* sql = "SELECT content FROM notes WHERE id = ?;";
+    sqlite3_stmt* stmt = NULL;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_prepare_v2 failed", MB_OK | MB_ICONERROR);
+        return NULL;
+    }
+
+    // Bind the note ID
+    sqlite3_bind_int(stmt, 1, noteId);
+
+    char* result = NULL;
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        const unsigned char* text = sqlite3_column_text(stmt, 0);
+        if (text) {
+            result = _strdup((const char*)text); // or strdup if not using MSVC
+        }
+    }
+    else if (rc != SQLITE_DONE) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "sqlite3_step failed", MB_OK | MB_ICONERROR);
+    }
+
+    sqlite3_finalize(stmt);
+    return result; // caller must free(result)
+}
+
+void RecalculateNotePositions(HWND hwnd) {
+    int x = NOTE_MARGIN;
+    int y = NOTE_MARGIN;
+    int totalContentHeight = 0;
+
+    for (int i = 0; i < noteCount; i++)
+    {
+        notes_true[i].rect.left = x;
+        notes_true[i].rect.top = y;
+
+        notes_true[i].rect.right = x + NOTE_WIDTH;
+        notes_true[i].rect.bottom = y + NOTE_HEIGHT;
+
+        y += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
+    }
+
+    RECT client;
+    GetClientRect(hwnd, &client);
+    SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(client.right - client.left, client.bottom - client.top));
+}
+
+void updateDatabaseEntry(int noteId, const char* buffer) {
+    sqlite3_stmt* stmt;
+    int rc;
+
+    // 1. Define the parameterized SQL UPDATE statement
+    // The '?' are placeholders for the title, content, and id.
+    const char* sql = "UPDATE notes SET title = ?, content = ? WHERE id = ?;";
+
+    // 2. Prepare the statement
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "Failed to prepare update", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    // 3. Bind the values to the placeholders (1-indexed)
+    // Bind the new title (placeholder 1)
+    sqlite3_bind_text(stmt, 1, "Updated Note", -1, SQLITE_TRANSIENT);
+
+    // Bind the new content (placeholder 2)
+    // SQLITE_TRANSIENT tells SQLite to make its own private copy of the content string
+    sqlite3_bind_text(stmt, 2, buffer, -1, SQLITE_TRANSIENT);
+
+    // Bind the ID (placeholder 3) - this specifies WHICH row to update
+    sqlite3_bind_int(stmt, 3, noteId);
+
+    // 4. Execute the statement
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        MessageBoxA(NULL, sqlite3_errmsg(db), "Update failed", MB_OK | MB_ICONERROR);
+    }
+
+    // 5. Clean up the prepared statement
+    sqlite3_finalize(stmt);
+}

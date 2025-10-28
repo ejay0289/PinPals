@@ -34,11 +34,32 @@ char windowTitle[] = "PinPals";
 #define NOTE_HEIGHT 100
 #define NOTE_WIDTH 200
 //Globals
+int getNoteCount(sqlite3* db) {
+    sqlite3_stmt* stmt;
+    int count = 0;
+    const char* sql = "SELECT COUNT(*) FROM notes;";
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            count = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    return count;
+}
+
+
 sqlite3 *db = NULL;
 HWND hmainWindowHandle;
 HWND* noteHandles = NULL;
 int noteCount = 0;
 int scrollPos = 0;
+
+struct Note {
+    RECT rect;
+    char title[50];
+    char text[MAX_NOTE_TEXT_LEN];
+};
 
 struct NoteRectAndHandle {
     HWND hwnd;
@@ -48,6 +69,7 @@ struct NoteRectAndHandle {
     int noteId;
 };
 struct NoteRectAndHandle* notes = NULL;
+struct Note* notes_true = NULL;
 
 int addToDatabase(struct NoteRectAndHandle* note)
 {
@@ -102,7 +124,22 @@ int addToDatabase(struct NoteRectAndHandle* note)
     else {
         MessageBoxA(NULL, "Failed to prepare SELECT", "Error", MB_OK | MB_ICONERROR);
     }
+    note->noteId= (int)last_id;
+    char buffer[64];
 
+    snprintf( // Use snprintf for char (not swprintf_s)
+        buffer,
+        sizeof(buffer), // Use sizeof for char array size
+        "The value is: %d",
+        note->noteId
+    );
+
+    MessageBox(
+        NULL,               // Owner window handle
+        buffer,             // The buffer containing the formatted string
+        "C-Style Output",
+        MB_OK
+    );
     return SQLITE_OK;
 }
 char* getDatabaseEntry(int noteId) {
@@ -411,7 +448,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        int windowHeight = rect.bottom - rect.top;
        int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
        
-       int totalContentHeight = (noteCount > 0)
+       int totalContentHeight = (noteCount > 8)
            ? notes[noteCount - 1].rect.bottom + NOTE_MARGIN // Bottom of last note + final margin
            : 0;
 
@@ -451,6 +488,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_CREATE:
     {
+        char buffer[64];
+
+        snprintf( // Use snprintf for char (not swprintf_s)
+            buffer,
+            sizeof(buffer), // Use sizeof for char array size
+            "The value is: %d",
+            noteCount
+        );
+
+        MessageBox(
+            NULL,               // Owner window handle
+            buffer,             // The buffer containing the formatted string
+            "C-Style Output",
+            MB_OK
+        );
 		
 		//////////////////////
 		
@@ -476,7 +528,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SetWindowLongPtr(hwnd, NEW_NOTE_BUTTON_HANDLE, (LONG_PTR)newNoteButton);
         SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(windowWidth, rec.bottom - rec.top));
 ////////////////////////////////////////////////////
-      
+       // RecalculateNotePositions(hwnd);
+        //InvalidateRect(hwnd, NULL, TRUE);
+       // UpdateWindow(hwnd);
        
  
     }break;
@@ -551,40 +605,56 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrush);
         SetBkMode(hdc, TRANSPARENT);
 
-        // Draw all notes
-        for (int i = 0; i < noteCount; i++)
+
+        //This somehow works
+    /*    RECT rect = {10, 10, 210, 110};
+
+        for (int i = 0; i < noteCount; i++) {
+            char* content = getDatabaseEntry(i);
+
+            DrawTextA(
+                hdc,
+                content,
+                -1,
+                &rect,
+                DT_LEFT | DT_TOP | DT_WORDBREAK
+            );
+
+            rect.top += 120;
+            rect.bottom += 120;
+        }*/
+        //SUPER IMPORTANT
+        //
+        //
+              // Draw all notes is completely broken
+        for (int i = 1; i < 8; i++)
         {
             Rectangle(hdc, notes[i].rect.left, notes[i].rect.top, notes[i].rect.right, notes[i].rect.bottom);
-            if (notes[i].textLen > 0)
-            {
-                // Use the note's rect for the drawing area
-                RECT textRect = notes[i].rect;
+            RECT textRect = notes[i].rect;
+            InflateRect(&textRect, -5, -5);
 
-                // Adjust the rect inward slightly for padding
-                InflateRect(&textRect, -2, -2);
-                char* content = getDatabaseEntry(4);
-                DrawText(hdc,
-                    notes[i].text,
-                    notes[i].textLen,
+            // fetch content from DB using each note's unique ID
+            char* content = getDatabaseEntry(i);
+            if (content) {
+                DrawTextA(
+                    hdc,
+                    content,
+                    -1,
                     &textRect,
-                    DT_LEFT | DT_TOP | DT_WORDBREAK);
-
-                if (content) {
-                    //MessageBox(hwnd, content, "take this", MB_OK);
-                    free(content);  // release memory
-                }
-                else {
-                    MessageBox(hwnd, "No note found", "take this", MB_OK);
-                }
+                    DT_LEFT | DT_TOP | DT_WORDBREAK
+                );
+                free(content);
             }
-
-            char* content = getDatabaseEntry(4);
-            DrawText(hdc,
-                content,
-                notes[i].textLen,
-                &notes[0].rect,
-                DT_LEFT | DT_TOP | DT_WORDBREAK);
-                
+            else {
+                DrawTextA(
+                    hdc,
+                    "(empty)",
+                    -1,
+                    &textRect,
+                    DT_LEFT | DT_TOP | DT_WORDBREAK
+                );
+            }
+  
 			RECT rectXButton;
         int buttonSize = 15;
         rectXButton.left   = notes[i].rect.right - buttonSize;
@@ -602,8 +672,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         saveButton.bottom = notes[i].rect.top + buttonSize *2;
         DrawText(hdc, "+", 1, &saveButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-
         }
+        
 
 
        
@@ -742,7 +812,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             notes[noteCount] = (struct NoteRectAndHandle){ .hwnd = note, .rect = { 0,0,0,0 } };
                             notes[noteCount].text[0] = '\0';
                             notes[noteCount].textLen = 0;
-                    //adds blank note       // addToDatabase(&notes[noteCount]);
+                  
                             noteCount++;
 							SendMessage(hwnd, WM_SIZE, 0, 0);
 							
@@ -819,6 +889,22 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 {
 	//open db
     OpenDatabase();
+   noteCount = getNoteCount(db);
+   notes_true = malloc(sizeof(struct NoteRectAndHandle) * 10) ;
+
+   char* content;
+   RECT rect;
+   rect.left = 10;
+   rect.top = 10;
+   rect.right = 210;
+   rect.bottom =  110;
+
+
+   for(int i = 0; i < noteCount; i++){
+       content = getDatabaseEntry(i);
+       notes[i] = (struct NoteRectAndHandle){0,rect,20,content};
+
+   }
     WNDCLASSEX wc;
     MSG Msg;
 
@@ -911,36 +997,7 @@ int OpenDatabase(void) {
         return rc;
     }
 
-    // Insert a new note
-
-
-
-    // Get ID of last inserted note
-    sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
-
-    // Now fetch it and show in MessageBox
-    sqlite3_stmt* stmt = NULL;
-  /*  const char* select_sql = "SELECT title, content FROM notes WHERE id = ?;";
-
-    rc = sqlite3_prepare_v2(db, select_sql, -1, &stmt, NULL);
-    if (rc == SQLITE_OK) {
-        sqlite3_bind_int64(stmt, 1, last_id);
-
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            const unsigned char* title = sqlite3_column_text(stmt, 0);
-            const unsigned char* content = sqlite3_column_text(stmt, 1);
-
-            char message[512];
-            snprintf(message, sizeof(message), "Title: %s\nContent: %s", title, content);
-
-            MessageBoxA(NULL, message, "New Note Added", MB_OK);
-        }
-        sqlite3_finalize(stmt);
-    }
-    else {
-        MessageBoxA(NULL, "Failed to prepare SELECT statement", "Error", MB_OK | MB_ICONERROR);
-    }
-    */
+  
     return SQLITE_OK;
 }
 

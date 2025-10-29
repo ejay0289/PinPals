@@ -41,14 +41,12 @@ char windowTitle[] = "PinPals";
 sqlite3 *db = NULL;
 HWND hmainWindowHandle;
 int noteCount = 0;
-//int tempNoteCount = 0;
 int scrollPos = 0;
 struct Note* notes_true = NULL;
 struct Note* notes_unsaved = NULL;
 
 
 
-// Define the original procedure globally
 WNDPROC g_OriginalEditProc = NULL;
 
 LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -67,7 +65,7 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             HWND hNoteParent = GetParent(hwnd);
             SendMessage(hmainWindowHandle, WM_APP_NOTE_EDIT, (WPARAM)charTyped, (LPARAM)hNoteParent);
             
-            return CallWindowProc(g_OriginalEditProc,hwnd,msg,wParam,lParam); //Message will be passed to parent
+            return CallWindowProc(g_OriginalEditProc,hwnd,msg,wParam,lParam);
         }
     }
     break;
@@ -259,19 +257,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         TCHAR charTyped = (TCHAR)wParam;
         HWND hNoteParent = (HWND)lParam;
 
-        // 1. Find the corresponding NoteRectAndHandle structure
         for (int i = 0; i < noteCount; i++)
         {
             if (notes_true[i].text == hNoteParent)
             {
-                // 2. Update the text buffer based on the character
+                // Update the text buffer based on the character
                 int currentLen = notes_true[i].textLen;
 
                 if (charTyped == '\b')
                 {
                     if (currentLen > 0)
                     {
-                        notes_true[i].text[currentLen - 1] = '\0'; // Null-terminate the new end
+                        notes_true[i].text[currentLen - 1] = '\0'; 
                         notes_true[i].textLen = currentLen - 1;
                     }
                 }
@@ -280,12 +277,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     if (currentLen < MAX_NOTE_TEXT_LEN - 1)
                     {
                         notes_true[i].text[currentLen] = charTyped;
-                        notes_true[i].text[currentLen + 1] = '\0'; // Null-terminate
+                        notes_true[i].text[currentLen + 1] = '\0'; 
                         notes_true[i].textLen = currentLen + 1;
                     }
                 }
 
-                // 3. Force the main window to redraw (where the RECTs are drawn)
                 InvalidateRect(hwnd, &notes_true[i].rect, TRUE);
                 UpdateWindow(hwnd);
 
@@ -304,7 +300,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
        
        int totalContentHeight = (noteCount > 8)
-           ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN // Bottom of last note + final margin
+           ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN 
            : 0;
 
        SCROLLINFO si = { 0 };
@@ -345,9 +341,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         char buffer[64];
 
-        snprintf( // Use snprintf for char (not swprintf_s)
+        snprintf( 
             buffer,
-            sizeof(buffer), // Use sizeof for char array size
+            sizeof(buffer),
             "The value is: %d",
             noteCount
         );
@@ -419,8 +415,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         if (yNewPos == yOldPos) return 0;
 
-        int scrollAmount = yOldPos - yNewPos; // Positive for scrolling content UP
-
+        int scrollAmount = yOldPos - yNewPos; 
         SetScrollPos(hwnd, SB_VERT, yNewPos, TRUE);
 
         RECT rcUpdate;
@@ -454,8 +449,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 0)); // yellow notes
         HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrush);
         SetBkMode(hdc, TRANSPARENT);
-
-              // Draw all notes is completely broken
 
         int theY = NOTE_MARGIN;
 
@@ -547,7 +540,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         for (int i = 0; i < noteCount; i++) {
             if (notes_true[i].id == noteId) {
 
-                // Delete from DB
                 deleteNoteFromDatabase(noteId);
                 for (int j = i; j < noteCount - 1; j++) {
                     notes_true[j] = notes_true[j + 1];
@@ -608,10 +600,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         else {
 							//TODO:Shift all notes up an index and place new note at index 0;
 			
-                            notes_true[noteCount] = (struct Note){0};
-                            
-                            //notes[noteCount].textLen = 0;
-                  
+                            notes_true[noteCount] = (struct Note){0};                  
                             noteCount++;
 							SendMessage(hwnd, WM_SIZE, 0, 0);
 							
@@ -619,7 +608,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }
-                    //}
                     
 
         }
@@ -704,7 +692,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
 {
-	//open db
    OpenDatabase();
    noteCount = getNoteCount(db);
    notes_true = malloc(sizeof(struct Note) * noteCount) ;
@@ -723,15 +710,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
        while (sqlite3_step(stmt) == SQLITE_ROW) {
            int id = sqlite3_column_int(stmt, 0);
            if (i >= noteCount) {
-               // This is an unexpected state if noteCount was correctly calculated.
-               // You would need realloc here if you weren't relying on the initial count.
+               // Must realloc here if you weren't relying on the initial count.
                break;
            }
            const unsigned char* title = sqlite3_column_text(stmt, 1);
            const unsigned char* content = sqlite3_column_text(stmt, 2);
 
 
-           notes_true[i].id = id; // <- store the actual DB ID
+           notes_true[i].id = id;
            strncpy_s(notes_true[i].title, sizeof(notes_true[i].title), (const char*)title, _TRUNCATE);
            strncpy_s(notes_true[i].text, sizeof(notes_true[i].text), (const char*)content, _TRUNCATE);
            notes_true[i].textLen = (int)strlen((const char*)content);
@@ -862,18 +848,15 @@ int addToDatabase(struct Note* note)
     const char* insert_sql =
         "INSERT INTO notes (title, content) VALUES (?, ?);";
 
-    // Prepare the SQL statement
     rc = sqlite3_prepare_v2(db, insert_sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         MessageBoxA(NULL, sqlite3_errmsg(db), "Prepare failed", MB_OK | MB_ICONERROR);
         return rc;
     }
 
-    // Bind title and content dynamically
     sqlite3_bind_text(stmt, 1, "New note", -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, note->text, -1, SQLITE_TRANSIENT);
 
-    // Execute the INSERT
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
@@ -885,7 +868,6 @@ int addToDatabase(struct Note* note)
     // Get the last inserted ID
     sqlite3_int64 last_id = sqlite3_last_insert_rowid(db);
 
-    // Retrieve the inserted note and show it
     const char* select_sql =
         "SELECT title, content FROM notes WHERE id = ?;";
 
@@ -909,9 +891,9 @@ int addToDatabase(struct Note* note)
     note->id = (int)last_id;
     char buffer[64];
 
-    snprintf( // Use snprintf for char (not swprintf_s)
+    snprintf(
         buffer,
-        sizeof(buffer), // Use sizeof for char array size
+        sizeof(buffer),
         "The value is: %d",
         note->id
     );
@@ -954,7 +936,6 @@ char* getDatabaseEntry(int noteId) {
         return NULL;
     }
 
-    // Bind the note ID
     sqlite3_bind_int(stmt, 1, noteId);
 
     char* result = NULL;
@@ -963,7 +944,7 @@ char* getDatabaseEntry(int noteId) {
     if (rc == SQLITE_ROW) {
         const unsigned char* text = sqlite3_column_text(stmt, 0);
         if (text) {
-            result = _strdup((const char*)text); // or strdup if not using MSVC
+            result = _strdup((const char*)text);
         }
     }
     else if (rc != SQLITE_DONE) {
@@ -971,7 +952,7 @@ char* getDatabaseEntry(int noteId) {
     }
 
     sqlite3_finalize(stmt);
-    return result; // caller must free(result)
+    return result; // caller must free
 }
 
 void RecalculateNotePositions(HWND hwnd) {
@@ -998,35 +979,21 @@ void RecalculateNotePositions(HWND hwnd) {
 void updateDatabaseEntry(int noteId, const char* buffer) {
     sqlite3_stmt* stmt;
     int rc;
-
-    // 1. Define the parameterized SQL UPDATE statement
-    // The '?' are placeholders for the title, content, and id.
+    
     const char* sql = "UPDATE notes SET title = ?, content = ? WHERE id = ?;";
-
-    // 2. Prepare the statement
     rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         MessageBoxA(NULL, sqlite3_errmsg(db), "Failed to prepare update", MB_OK | MB_ICONERROR);
         return;
     }
 
-    // 3. Bind the values to the placeholders (1-indexed)
-    // Bind the new title (placeholder 1)
     sqlite3_bind_text(stmt, 1, "Updated Note", -1, SQLITE_TRANSIENT);
-
-    // Bind the new content (placeholder 2)
-    // SQLITE_TRANSIENT tells SQLite to make its own private copy of the content string
     sqlite3_bind_text(stmt, 2, buffer, -1, SQLITE_TRANSIENT);
-
-    // Bind the ID (placeholder 3) - this specifies WHICH row to update
     sqlite3_bind_int(stmt, 3, noteId);
 
-    // 4. Execute the statement
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         MessageBoxA(NULL, sqlite3_errmsg(db), "Update failed", MB_OK | MB_ICONERROR);
     }
-
-    // 5. Clean up the prepared statement
     sqlite3_finalize(stmt);
 }

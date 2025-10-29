@@ -211,21 +211,19 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    //For tracking note updates
     static char* idIsPresent = NULL;
     static int noteUpdateId = 0;
 
 
-
     switch (msg)
     {
-		
-		
 	case WM_LBUTTONDOWN:
 	{
 		POINT ptClick;
 		ptClick.x = GET_X_LPARAM(lParam);
 		ptClick.y = GET_Y_LPARAM(lParam);
-		
+		//Note deletion
 		for(int i = 0; i < noteCount; i++)
 		{
 			RECT rectXButton;
@@ -240,18 +238,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 SendMessage(hwnd, WM_APP_NOTE_DELETED, (WPARAM)notes_true[i].id, (LPARAM)notes_true[i].id);
                 break;
             }
-
+            
 			if(PtInRect(&notes_true[i].rect,ptClick) && PtInRect(&notes_true[i].rect, ptClick))
 			{
                 int noteId = notes_true[i].id;
                 int noteLength = notes_true[i].textLen;
                 SendMessage(hwnd, WM_APP_CALL_UPDATE_WINDOW, (WPARAM)noteId, (LPARAM)noteLength);
-				//ShowWindow(notes_true[i].hwnd,SW_SHOW);
 			break;
 			}
 		}
 	}break;
 
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+    //TODO: Make real time updates appear in note RECT with WP_APP_NOTE_EDIT: Worked in a previous implepmentation but broke
     case WM_APP_NOTE_EDIT:
     {
         TCHAR charTyped = (TCHAR)wParam;
@@ -284,12 +284,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
                 InvalidateRect(hwnd, &notes_true[i].rect, TRUE);
                 UpdateWindow(hwnd);
-
-                break; // Found and processed the note, exit loop
+                break; 
             }
         }
     }
     return 0;
+
+    //Wndproc
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     case WM_SIZE:
     {
@@ -307,13 +309,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        si.cbSize = sizeof(si);
        si.fMask = SIF_RANGE | SIF_PAGE;
        si.nMin = 0;
-       //THIS SHIT FAILED WHY IS SCROLLING SO HARD FUCKKKK
-
-       // Set max range to the bottom of the content.
-       // The range represents the *top* of the window when fully scrolled down.
-       // The max position is totalContentHeight - windowHeight. 
-       // The 'nMax' parameter here must be greater than 'nMin' and includes nPage.
-       // A more common approach is setting nMax to the full content height.
        si.nMax = totalContentHeight;
        si.nPage = windowHeight;
        SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
@@ -328,7 +323,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        }
 
        int topRightX = windowWidth - scrollbarWidth - 100; // top-right 
-       int topRightY = 0;
+       int topRightY = 0;                                  //
 
        HWND newNoteButton = (HWND)GetWindowLongPtr(hwnd, NEW_NOTE_BUTTON_HANDLE);
         MoveWindow(newNoteButton, topRightX, topRightY, 100, 50, TRUE);
@@ -336,28 +331,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         MoveWindow(closeAllButton, topRightX, topRightY + 50, 100, 50, TRUE);
 
     }break;
+    //WndProc
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     case WM_CREATE:
     {
-        char buffer[64];
-
-        snprintf( 
-            buffer,
-            sizeof(buffer),
-            "The value is: %d",
-            noteCount
-        );
-
-  
-		
-		//////////////////////
-		
+	
         RECT rec;
         GetClientRect(hwnd, &rec);
         int windowWidth = rec.right - rec.left;
         int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
         int topRightX = windowWidth - scrollbarWidth - 100;
-
 
         HWND newNoteButton = CreateWindowEx(
             0, "BUTTON", "New Note",
@@ -373,14 +357,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         SetWindowLongPtr(hwnd, NEW_NOTE_BUTTON_HANDLE, (LONG_PTR)newNoteButton);
         SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(windowWidth, rec.bottom - rec.top));
-////////////////////////////////////////////////////
-       // RecalculateNotePositions(hwnd);
-        //InvalidateRect(hwnd, NULL, TRUE);
-       // UpdateWindow(hwnd);
-       
  
     }break;
 
+    /////////////////////////////////////////////////////////////////////////////////////////////////////      
+
+
+    //TODO: Implement scrolling
     case WM_VSCROLL:
     {
         SCROLLINFO si = { 0 };
@@ -435,8 +418,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         UpdateWindow(hwnd);
     }
     return 0;
-
-
+    //WndProc
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
@@ -459,7 +442,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             notes_true[i].rect.right = NOTE_MARGIN + NOTE_WIDTH;
             notes_true[i].rect.bottom = theY + NOTE_HEIGHT;
             theY += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
-
         }
 
     //Draw notes to main window
@@ -469,7 +451,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             RECT textRect = notes_true[i].rect;
             InflateRect(&textRect, -5, -5);
 
-            // fetch content from DB using each note's unique ID
+            // fetch content(text) from DB using each note's unique ID
             char* content = getDatabaseEntry(notes_true[i].id);
             if (content) {
                 DrawTextA(
@@ -500,7 +482,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         }
-               
+
         // Cleanup
         SelectObject(hdc, oldBrush);
         DeleteObject(hBrush);
@@ -508,7 +490,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
     }
     break;
+    
 
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     case WM_APP_CALL_UPDATE_WINDOW:
     {
 
@@ -533,6 +517,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     }break;
 	
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	case WM_APP_NOTE_DELETED:
     {
         int noteId = (int)lParam;
@@ -544,8 +529,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 for (int j = i; j < noteCount - 1; j++) {
                     notes_true[j] = notes_true[j + 1];
                 }
-                // Replace deleted element with last
-                //notes_true[i] = notes_true[noteCount - 1];
                 noteCount--;
 
                 if (noteCount > 0) {
@@ -558,7 +541,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     notes_true = NULL;
 
                 }
-
                 RecalculateNotePositions(hwnd);
                 InvalidateRect(hwnd, NULL, TRUE);
                 break;
@@ -567,7 +549,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
     break;
 
-
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     case WM_COMMAND:
     {
         int ctrlId = LOWORD(wParam);
@@ -608,8 +590,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }
-                    
-
         }
         else if (ctrlId == ID_CLOSE_ALL_BUTTON) {
             free(notes_true);
@@ -624,12 +604,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
     }break;
 
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     case WM_CLOSE:
         //DestroyWindow(hwnd);
         ShowWindow(hwnd, SW_HIDE);
         break;
 
-
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     case WM_APP_SAVE:
     {
         LPARAM noteHandle = (LPARAM)lParam;
@@ -639,8 +620,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         char* buffer = malloc(length + 1);
         GetWindowText(hEdit, buffer, length + 1);
         char sql[512];
-
-
 
         if (idIsPresent) {
             updateDatabaseEntry(noteUpdateId, buffer);
@@ -665,16 +644,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 notes_true[noteCount - 1].rect = (RECT){ 0,0,0,0 };
             }
         }
-
-
-
         RecalculateNotePositions(hwnd);
         InvalidateRect(hwnd, NULL, TRUE);
         UpdateWindow(hwnd);
-
-
         free(buffer);
-
     }break;
 
     case WM_DESTROY:
@@ -690,6 +663,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+//WinMain
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
 {
    OpenDatabase();
@@ -716,17 +691,16 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
            const unsigned char* title = sqlite3_column_text(stmt, 1);
            const unsigned char* content = sqlite3_column_text(stmt, 2);
 
-
            notes_true[i].id = id;
            strncpy_s(notes_true[i].title, sizeof(notes_true[i].title), (const char*)title, _TRUNCATE);
            strncpy_s(notes_true[i].text, sizeof(notes_true[i].text), (const char*)content, _TRUNCATE);
            notes_true[i].textLen = (int)strlen((const char*)content);
            notes_true[i].rect = rect;
-
            i++;
        }
        sqlite3_finalize(stmt);
    }
+   ////////////////////////////////////
  
     WNDCLASSEX wc;
     MSG Msg;
@@ -794,6 +768,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     return Msg.wParam;
 }
 
+//Function definitions
+////////////////////////////////
 int getNoteCount(sqlite3* db) {
     sqlite3_stmt* stmt;
     int count = 0;
@@ -964,10 +940,8 @@ void RecalculateNotePositions(HWND hwnd) {
     {
         notes_true[i].rect.left = x;
         notes_true[i].rect.top = y;
-
         notes_true[i].rect.right = x + NOTE_WIDTH;
         notes_true[i].rect.bottom = y + NOTE_HEIGHT;
-
         y += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
     }
 

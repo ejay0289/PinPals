@@ -131,6 +131,7 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="PinPals.ico" />
+    <Image Include="plus_icon.ico" />
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>

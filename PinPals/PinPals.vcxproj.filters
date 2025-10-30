@@ -34,6 +34,9 @@
     <Image Include="PinPals.ico">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="plus_icon.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PinPals.c">

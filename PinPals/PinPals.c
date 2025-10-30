@@ -18,6 +18,7 @@
 #define ID_SHOW_ALL_NOTES_BUTTON 3005
 #define ID_CLOSE_ALL_BUTTON 3006
 #define ID_SAVE_NOTE_BUTTON 3007
+#define ID_OPTIONS_BUTTON 3008
 
 //Per note offsets for cbWndExtra
 #define NOTE_HANDLE 0
@@ -44,6 +45,7 @@ int noteCount = 0;
 int scrollPos = 0;
 struct Note* notes_true = NULL;
 struct Note* notes_unsaved = NULL;
+HICON hPlusIcon;
 
 
 
@@ -322,13 +324,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
            UpdateWindow(hwnd);
        }
 
-       int topRightX = windowWidth - scrollbarWidth - 100; // top-right 
+       int topRightX = windowWidth - scrollbarWidth - 50; // top-right 
        int topRightY = 0;                                  //
 
        HWND newNoteButton = (HWND)GetWindowLongPtr(hwnd, NEW_NOTE_BUTTON_HANDLE);
-        MoveWindow(newNoteButton, topRightX, topRightY, 100, 50, TRUE);
+        MoveWindow(newNoteButton, topRightX -50, topRightY, 25, 25, TRUE);
         HWND closeAllButton = GetDlgItem(hwnd, ID_CLOSE_ALL_BUTTON);
-        MoveWindow(closeAllButton, topRightX, topRightY + 50, 100, 50, TRUE);
+        MoveWindow(closeAllButton, topRightX, topRightY, 50, 50, TRUE);
 
     }break;
     //WndProc
@@ -336,16 +338,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_CREATE:
     {
-	
+        
+
         RECT rec;
         GetClientRect(hwnd, &rec);
         int windowWidth = rec.right - rec.left;
         int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
         int topRightX = windowWidth - scrollbarWidth - 100;
 
-        HWND newNoteButton = CreateWindowEx(
-            0, "BUTTON", "New Note",
+
+        HWND optionsButton = CreateWindowEx(
+            0, "BUTTON", "***",
             WS_CHILD | BS_PUSHBUTTON | WS_VISIBLE,
+            0, 0, 50, 50, hwnd, (HMENU)ID_OPTIONS_BUTTON, GetModuleHandle(NULL),
+            NULL
+        );
+
+        HWND newNoteButton = CreateWindowEx(
+            0, "BUTTON", "+",
+            WS_CHILD | BS_OWNERDRAW | WS_VISIBLE,
             topRightX, 50, 100, 50, hwnd, (HMENU)ID_NEW_NOTE, GetModuleHandle(NULL),
             NULL
         );
@@ -359,6 +370,42 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(windowWidth, rec.bottom - rec.top));
  
     }break;
+
+    case WM_DRAWITEM:
+    {
+        LPDRAWITEMSTRUCT lpDraw = (LPDRAWITEMSTRUCT)lParam;
+
+        if (lpDraw->CtlID == ID_NEW_NOTE)
+        {
+            // Fill background
+            FillRect(lpDraw->hDC, &lpDraw->rcItem, (HBRUSH)(COLOR_WINDOW + 1));
+
+            // Highlight when pressed
+            if (lpDraw->itemState & ODS_SELECTED)
+            {
+                FillRect(lpDraw->hDC, &lpDraw->rcItem, CreateSolidBrush(RGB(220, 220, 220)));
+            }
+
+            // Compute icon placement
+            int iconSize = 256;  // your .ico is 256x256
+            int btnWidth = lpDraw->rcItem.right - lpDraw->rcItem.left;
+            int btnHeight = lpDraw->rcItem.bottom - lpDraw->rcItem.top;
+
+            // If the button is smaller than 256x256, scale down proportionally
+            if (iconSize > btnWidth || iconSize > btnHeight)
+                iconSize = min(btnWidth, btnHeight);
+
+            // Center the icon
+            int iconX = lpDraw->rcItem.left + (btnWidth - iconSize) / 2;
+            int iconY = lpDraw->rcItem.top + (btnHeight - iconSize) / 2;
+
+            // Draw it in full resolution (or scaled if smaller)
+            DrawIconEx(lpDraw->hDC, iconX, iconY, hPlusIcon, iconSize, iconSize, 0, NULL, DI_NORMAL);
+
+            return TRUE;
+        }
+    }
+    break;
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////      
 
@@ -433,7 +480,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrush);
         SetBkMode(hdc, TRANSPARENT);
 
-        int theY = NOTE_MARGIN;
+        int theY = NOTE_MARGIN +50;
 
         for (int i = 0; i < noteCount; i++)
         {
@@ -667,7 +714,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
 {
-   OpenDatabase();
+
+    hPlusIcon = (HICON)LoadImage(
+        hInstance,
+        MAKEINTRESOURCE(IDI_PLUS_ICON),
+        IMAGE_ICON,
+        256, 256,
+        LR_CREATEDIBSECTION | LR_DEFAULTCOLOR
+    );   OpenDatabase();
    noteCount = getNoteCount(db);
    notes_true = malloc(sizeof(struct Note) * noteCount) ;
 

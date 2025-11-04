@@ -109,7 +109,7 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         HWND textArea = CreateWindowEx(
             0, "EDIT", "",
-            WS_CHILD | WS_VISIBLE | ES_MULTILINE |ES_AUTOVSCROLL | WS_VSCROLL,
+            WS_CHILD | WS_VISIBLE | ES_MULTILINE |ES_AUTOVSCROLL | WS_VSCROLL | ES_WANTRETURN,
             0, 0, 100, 100, hwnd, (HMENU)ID_TEXT, GetModuleHandle(NULL),
             NULL
         );
@@ -127,49 +127,67 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
         break;
 
+
+
     case WM_COMMAND:
     {
         int ctrlId = LOWORD(wParam);
         int notifCode = HIWORD(wParam);
 
+        if (ctrlId == ID_TEXT && notifCode == EN_CHANGE) {
+            KillTimer(hwnd, 1);
+            SetTimer(hwnd, 1, 300, NULL);  // debounce 300ms
+        }
+        else{
+
+
+
             switch (notifCode) {
             case BN_CLICKED:
                 if (ctrlId == ID_PIN_BUTTON) {
-            {
-                topMostState = (int)GetWindowLongPtr(hwnd, NOTE_TOPMOST_STATE);
-                if (!topMostState) {
-                    SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                        SWP_NOMOVE | SWP_NOSIZE);
-                    
-                    SetWindowLongPtr(hwnd, NOTE_TOPMOST_STATE, (LONG_PTR)1);
-                }
-                else {
-                    SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-                    SetWindowLongPtr(hwnd, NOTE_TOPMOST_STATE, 0);
+                    {
+                        topMostState = (int)GetWindowLongPtr(hwnd, NOTE_TOPMOST_STATE);
+                        if (!topMostState) {
+                            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE);
 
-                }
-            }
+                            SetWindowLongPtr(hwnd, NOTE_TOPMOST_STATE, (LONG_PTR)1);
+                        }
+                        else {
+                            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                            SetWindowLongPtr(hwnd, NOTE_TOPMOST_STATE, 0);
+
+                        }
+                    }
                 }
                 else if (ctrlId == ID_SHOW_ALL_NOTES_BUTTON) {
-                    ShowWindow(hmainWindowHandle,SW_SHOW);
-                    
+                    ShowWindow(hmainWindowHandle, SW_SHOW);
+
                 }
 
                 else if (ctrlId == ID_NEW_NOTE_BUTTON) {
-					WORD ctrlId = ID_NEW_NOTE;
-					WORD notifCode = BN_CLICKED;
-					
-					PostMessage(hmainWindowHandle,WM_COMMAND,MAKELPARAM(ctrlId,notifCode),0);
-					PostMessage(hmainWindowHandle,WM_PAINT,(WPARAM)hwnd,0);
+                    WORD ctrlId = ID_NEW_NOTE;
+                    WORD notifCode = BN_CLICKED;
+
+                    PostMessage(hmainWindowHandle, WM_COMMAND, MAKELPARAM(ctrlId, notifCode), 0);
+                    PostMessage(hmainWindowHandle, WM_PAINT, (WPARAM)hwnd, 0);
                 }
 
-                else if(ctrlId == ID_SAVE_NOTE_BUTTON){
+                else if (ctrlId == ID_SAVE_NOTE_BUTTON) {
                     SendMessage(hmainWindowHandle, WM_APP_SAVE, (WPARAM)hwnd, (LPARAM)hwnd);
                 }
-                
+
                 break;
-        }
+            }
+    }
     }break;
+
+    case WM_TIMER:
+        if (wParam == 1) {
+            KillTimer(hwnd, 1);
+            SendMessage(hmainWindowHandle, WM_APP_SAVE,(WPARAM)hwnd, (LPARAM)hwnd);
+        }
+        break;
 
     case WM_SIZE:
     {
@@ -371,6 +389,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
  
     }break;
 
+    ////////////////////////////////////////////////////////////////////////////////////
     case WM_DRAWITEM:
     {
         LPDRAWITEMSTRUCT lpDraw = (LPDRAWITEMSTRUCT)lParam;
@@ -513,7 +532,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             else {
                 DrawTextA(
                     hdc,
-                    "(empty)",
+                    "",
                     -1,
                     &textRect,
                     DT_LEFT | DT_TOP | DT_WORDBREAK
@@ -526,7 +545,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             rectXButton.top    = notes_true[i].rect.top;
             rectXButton.right  = notes_true[i].rect.right;
             rectXButton.bottom = notes_true[i].rect.top + buttonSize;
-            DrawText(hdc, "X", 1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            DrawText(hdc, "X", -1, &rectXButton, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
         }
 
@@ -684,6 +703,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
             else {
                 sqlite3_int64 lastId = sqlite3_last_insert_rowid(db);
+                idIsPresent = getDatabaseEntry(lastId);
+                noteUpdateId = lastId;
                 notes_true[noteCount - 1].id = (int)lastId;
                 strncpy_s(notes_true[noteCount - 1].title, sizeof(notes_true[noteCount - 1].title), "New Note", _TRUNCATE);
                 strncpy_s(notes_true[noteCount - 1].text, sizeof(notes_true[noteCount - 1].text), buffer, _TRUNCATE);
@@ -695,6 +716,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         InvalidateRect(hwnd, NULL, TRUE);
         UpdateWindow(hwnd);
         free(buffer);
+        free(idIsPresent);
+        idIsPresent = NULL;
     }break;
 
     case WM_DESTROY:

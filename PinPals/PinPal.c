@@ -49,31 +49,7 @@ HICON hPlusIcon;
 
 
 
-WNDPROC g_OriginalEditProc = NULL;
 
-LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_CHAR:
-    {
-        TCHAR charTyped = (TCHAR)wParam;
-
-        if (charTyped > 31 || charTyped == '\b' || charTyped == '\n')
-        {
-            // **INTERCEPTED ACTION HERE
-            char buffer[32];
-            wsprintf(buffer, "%c", (int)charTyped);
-            HWND hNoteParent = GetParent(hwnd);
-            SendMessage(hmainWindowHandle, WM_APP_NOTE_EDIT, (WPARAM)charTyped, (LPARAM)hNoteParent);
-            
-            return CallWindowProc(g_OriginalEditProc,hwnd,msg,wParam,lParam);
-        }
-    }
-    break;
-    }
-    return CallWindowProc(g_OriginalEditProc, hwnd, msg, wParam, lParam);
-}
 
 
 
@@ -114,15 +90,22 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             NULL
         );
 
-        HFONT hfDefault = GetStockObject(DEFAULT_GUI_FONT);
-        SendMessage(textArea, WM_SETFONT, (WPARAM)hfDefault, MAKELPARAM(FALSE, 0));
+        HFONT hFont = CreateFont(
+            -18,                // Height 
+            0, 0, 0,            // Width, escapement, orientation
+            FW_NORMAL,          // Weight
+            FALSE, FALSE, FALSE,// Italic, underline, strikeout
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            DEFAULT_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE,
+            "Segoe UI"          // Font face
+        );
+
+        SendMessage(textArea, WM_SETFONT, (WPARAM)hFont, TRUE);
         SetWindowLongPtr(hwnd, 0, (LONG_PTR)textArea);
 
-        g_OriginalEditProc = (WNDPROC)SetWindowLongPtr(
-            textArea,                  
-            GWLP_WNDPROC,               
-            (LONG_PTR)EditSubclassProc  
-        );
 
     }
         break;
@@ -167,7 +150,7 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
                 else if (ctrlId == ID_NEW_NOTE_BUTTON) {
                     WORD ctrlId = ID_NEW_NOTE;
-                    WORD notifCode = BN_CLICKED;
+                    WORD notifCode = BN_CLICKED; 
 
                     PostMessage(hmainWindowHandle, WM_COMMAND, MAKELPARAM(ctrlId, notifCode), 0);
                     PostMessage(hmainWindowHandle, WM_PAINT, (WPARAM)hwnd, 0);
@@ -270,45 +253,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	}break;
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
-    //TODO: Make real time updates appear in note RECT with WP_APP_NOTE_EDIT: Worked in a previous implepmentation but broke
-    case WM_APP_NOTE_EDIT:
-    {
-        TCHAR charTyped = (TCHAR)wParam;
-        HWND hNoteParent = (HWND)lParam;
 
-        for (int i = 0; i < noteCount; i++)
-        {
-            if (notes_true[i].text == hNoteParent)
-            {
-                // Update the text buffer based on the character
-                int currentLen = notes_true[i].textLen;
-
-                if (charTyped == '\b')
-                {
-                    if (currentLen > 0)
-                    {
-                        notes_true[i].text[currentLen - 1] = '\0'; 
-                        notes_true[i].textLen = currentLen - 1;
-                    }
-                }
-                else 
-                {
-                    if (currentLen < MAX_NOTE_TEXT_LEN - 1)
-                    {
-                        notes_true[i].text[currentLen] = charTyped;
-                        notes_true[i].text[currentLen + 1] = '\0'; 
-                        notes_true[i].textLen = currentLen + 1;
-                    }
-                }
-
-                InvalidateRect(hwnd, &notes_true[i].rect, TRUE);
-                UpdateWindow(hwnd);
-                break; 
-            }
-        }
-    }
-    return 0;
 
     //Wndproc
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -317,6 +262,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         RECT rect;
         GetClientRect(hwnd, &rect);
+        SetScrollRange(hwnd, SB_VERT, 0, 100, TRUE);
        int windowWidth = rect.right - rect.left;
        int windowHeight = rect.bottom - rect.top;
        int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
@@ -325,22 +271,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
            ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN 
            : 0;
 
-       SCROLLINFO si = { 0 };
-       si.cbSize = sizeof(si);
-       si.fMask = SIF_RANGE | SIF_PAGE;
-       si.nMin = 0;
-       si.nMax = totalContentHeight;
-       si.nPage = windowHeight;
-       SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
 
-       int yScrollPos = GetScrollPos(hwnd, SB_VERT);
        int maxScroll = max(0, totalContentHeight - windowHeight);
 
-       if (yScrollPos > maxScroll) {
-           ScrollWindowEx(hwnd, 0, yScrollPos - maxScroll, NULL, NULL, NULL, NULL, SW_INVALIDATE);
-           SetScrollPos(hwnd, SB_VERT, maxScroll, TRUE);
-           UpdateWindow(hwnd);
-       }
 
        int topRightX = windowWidth - scrollbarWidth - 50; // top-right 
        int topRightY = 0;                                  //
@@ -356,8 +289,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_CREATE:
     {
-        
-
+        SetScrollRange(hwnd,SB_VERT, 0, 1000,1);
         RECT rec;
         GetClientRect(hwnd, &rec);
         int windowWidth = rec.right - rec.left;
@@ -388,6 +320,53 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(windowWidth, rec.bottom - rec.top));
  
     }break;
+
+    case WM_VSCROLL:
+    {
+        int yPos = GetScrollPos(hwnd, SB_VERT);  // current position
+        int yOldPos = yPos;
+
+        switch (LOWORD(wParam))
+        {
+        case SB_LINEUP:
+            yPos -= 20;
+            break;
+
+        case SB_LINEDOWN:
+            yPos += 20;
+            break;
+
+        case SB_PAGEUP:
+            yPos -= 50;
+            break;
+
+        case SB_PAGEDOWN:
+            yPos += 50;
+            break;
+
+        case SB_THUMBTRACK:
+            yPos = HIWORD(wParam);
+            break;
+
+        default:
+            break;
+        }
+
+        // Clamp scroll position
+        yPos = max(0, min(yPos, 100));
+
+        // Only scroll if the position changed
+        if (yPos != yOldPos)
+        {
+            SetScrollPos(hwnd, SB_VERT, yPos, TRUE);
+
+            // Scroll window content
+            ScrollWindow(hwnd, 0, yOldPos - yPos, NULL, NULL);
+            UpdateWindow(hwnd);
+        }
+    }
+    break;
+
 
     ////////////////////////////////////////////////////////////////////////////////////
     case WM_DRAWITEM:
@@ -430,60 +409,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 
     //TODO: Implement scrolling
-    case WM_VSCROLL:
-    {
-        SCROLLINFO si = { 0 };
-        si.cbSize = sizeof(si);
-        si.fMask = SIF_ALL;
-        GetScrollInfo(hwnd, SB_VERT, &si);
 
-        int yOldPos = si.nPos;
-        int yNewPos = yOldPos;
-
-        RECT rect;
-        GetClientRect(hwnd, &rect);
-        int windowHeight = rect.bottom - rect.top;
-
-        int totalContentHeight = (noteCount > 0)
-            ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN
-            : 0;
-        int maxScroll = max(0, totalContentHeight - windowHeight);
-
-        switch (LOWORD(wParam))
-        {
-        case SB_LINEUP: yNewPos -= NOTE_HEIGHT / 2; break;
-        case SB_LINEDOWN: yNewPos += NOTE_HEIGHT / 2; break;
-        case SB_PAGEUP: yNewPos -= windowHeight; break;
-        case SB_PAGEDOWN: yNewPos += windowHeight; break;
-        case SB_THUMBTRACK: yNewPos = HIWORD(wParam); break;
-        default: return 0;
-        }
-
-        yNewPos = max(0, yNewPos);
-        yNewPos = min(yNewPos, maxScroll);
-
-        if (yNewPos == yOldPos) return 0;
-
-        int scrollAmount = yOldPos - yNewPos; 
-        SetScrollPos(hwnd, SB_VERT, yNewPos, TRUE);
-
-        RECT rcUpdate;
-
-        ScrollWindowEx(hwnd,
-            0,
-            scrollAmount,
-            NULL,       
-            NULL,       
-            &rcUpdate,  
-            NULL,       
-            0           
-        );
-
-
-        InvalidateRect(hwnd, &rcUpdate, TRUE);
-        UpdateWindow(hwnd);
-    }
-    return 0;
     //WndProc
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     case WM_PAINT:
@@ -501,14 +427,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         int theY = NOTE_MARGIN +50;
 
-        for (int i = 0; i < noteCount; i++)
-        {
-            notes_true[i].rect.left = NOTE_MARGIN;
-            notes_true[i].rect.top = theY;
-            notes_true[i].rect.right = NOTE_MARGIN + NOTE_WIDTH;
-            notes_true[i].rect.bottom = theY + NOTE_HEIGHT;
-            theY += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
-        }
 
     //Draw notes to main window
         for (int i = 0; i < noteCount; i++)
@@ -648,11 +566,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                         else {
 							//TODO:Shift all notes up an index and place new note at index 0;
 			
-                            notes_true[noteCount] = (struct Note){0};                  
-                            noteCount++;
-							SendMessage(hwnd, WM_SIZE, 0, 0);
-							
-                            RecalculateNotePositions(hwnd);
+                            notes_true[noteCount] = (struct Note){0}; 
+                            if (noteCount > 0)
+                            {
+                                RECT lastRect = notes_true[noteCount - 1].rect;
+                                notes_true[noteCount].rect.left = NOTE_MARGIN;
+                                notes_true[noteCount].rect.top = lastRect.bottom + NOTE_MARGIN;
+                                notes_true[noteCount].rect.right = NOTE_MARGIN + NOTE_WIDTH;
+                                notes_true[noteCount].rect.bottom = notes_true[noteCount].rect.top + NOTE_HEIGHT;
+                            }
+                            else
+                            {
+                                notes_true[noteCount].rect = (RECT){ NOTE_MARGIN, NOTE_MARGIN + 50, NOTE_MARGIN + NOTE_WIDTH, NOTE_MARGIN + 50 + NOTE_HEIGHT };
+                            }
+
+                            noteCount++;							
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }
@@ -716,8 +644,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         InvalidateRect(hwnd, NULL, TRUE);
         UpdateWindow(hwnd);
         free(buffer);
-        free(idIsPresent);
-        idIsPresent = NULL;
+        //free(idIsPresent);
+        //idIsPresent = NULL;
     }break;
 
     case WM_DESTROY:
@@ -1009,23 +937,20 @@ char* getDatabaseEntry(int noteId) {
 }
 
 void RecalculateNotePositions(HWND hwnd) {
-    int x = NOTE_MARGIN;
-    int y = NOTE_MARGIN;
-    int totalContentHeight = 0;
-
+    int yOffset = NOTE_MARGIN + 50;
     for (int i = 0; i < noteCount; i++)
     {
-        notes_true[i].rect.left = x;
-        notes_true[i].rect.top = y;
-        notes_true[i].rect.right = x + NOTE_WIDTH;
-        notes_true[i].rect.bottom = y + NOTE_HEIGHT;
-        y += NOTE_HEIGHT + NOTE_MARGIN; // stack vertically
+        notes_true[i].rect.left = NOTE_MARGIN;
+        notes_true[i].rect.top = yOffset;
+        notes_true[i].rect.right = NOTE_MARGIN + NOTE_WIDTH;
+        notes_true[i].rect.bottom = yOffset + NOTE_HEIGHT;
+        yOffset += NOTE_HEIGHT + NOTE_MARGIN;
     }
 
-    RECT client;
-    GetClientRect(hwnd, &client);
-    SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(client.right - client.left, client.bottom - client.top));
+    InvalidateRect(hwnd, NULL, TRUE);
 }
+
+
 
 void updateDatabaseEntry(int noteId, const char* buffer) {
     sqlite3_stmt* stmt;

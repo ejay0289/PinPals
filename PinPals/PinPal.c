@@ -6,7 +6,7 @@
 #include "sqlite3.h"
 #include <stdio.h>
 
-#include "PinPals.h"
+#include "PinPal.h"
 
 #define CON 0
 //control constants

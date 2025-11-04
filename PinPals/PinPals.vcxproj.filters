@@ -18,7 +18,7 @@
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="PinPals.h">
+    <ClInclude Include="PinPal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -39,7 +39,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="PinPals.c">
+    <ClCompile Include="PinPal.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="sqlite\sqlite3.c">

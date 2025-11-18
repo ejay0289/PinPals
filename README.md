@@ -1,6 +1,6 @@
-# PinPals
+# PinPal
 
-Pin Pals is a sticky note companion for windows written in C leveraging the Windows API
+Pin Pal is a sticky note companion for windows written in C leveraging the Windows API
 
 
 //Stuff I need to check out

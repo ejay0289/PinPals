@@ -78,10 +78,6 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             0, 100, 50, 50, hwnd, (HMENU)ID_SHOW_ALL_NOTES_BUTTON, GetModuleHandle(0), NULL
         );
 
-        HWND saveButton = CreateWindowEx(
-            0, "BUTTON", "Save", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            0, 150, 50, 50, hwnd, (HMENU)ID_SAVE_NOTE_BUTTON, GetModuleHandle(0), NULL
-        );
 
         HWND textArea = CreateWindowEx(
             0, "EDIT", "",
@@ -267,6 +263,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        int windowHeight = rect.bottom - rect.top;
        int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
        
+       if (noteCount > 0 && (windowWidth /2) <800) {
+           for (int i = 0; i < noteCount; i++) {
+               notes_true[i].rect.right = windowWidth / 2;
+           }
+
+       }
+
        int totalContentHeight = (noteCount > 8)
            ? notes_true[noteCount - 1].rect.bottom + NOTE_MARGIN 
            : 0;
@@ -282,13 +285,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         MoveWindow(newNoteButton, topRightX -50, topRightY, 25, 25, TRUE);
         HWND closeAllButton = GetDlgItem(hwnd, ID_CLOSE_ALL_BUTTON);
         MoveWindow(closeAllButton, topRightX, topRightY, 50, 50, TRUE);
-
+        InvalidateRect(hwnd, NULL, 1);
+        UpdateWindow(hwnd);
     }break;
     //WndProc
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     case WM_CREATE:
     {
+
+
+
+
         SetScrollRange(hwnd,SB_VERT, 0, 1000,1);
         RECT rec;
         GetClientRect(hwnd, &rec);
@@ -318,7 +326,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         SetWindowLongPtr(hwnd, NEW_NOTE_BUTTON_HANDLE, (LONG_PTR)newNoteButton);
         SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(windowWidth, rec.bottom - rec.top));
- 
+        RecalculateNotePositions(hwnd);
     }break;
 
     case WM_VSCROLL:
@@ -545,6 +553,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             {
                 
         if (ctrlId == ID_NEW_NOTE){
+
+            RECT rect;
+            GetWindowRect(hwnd, &rect);
+            int windowWidth = rect.right - rect.left;
+            int windowHeight = rect.bottom - rect.top;
                     HWND note = CreateWindowEx(
                         0,
                         myNoteClass,
@@ -938,11 +951,16 @@ char* getDatabaseEntry(int noteId) {
 
 void RecalculateNotePositions(HWND hwnd) {
     int yOffset = NOTE_MARGIN + 50;
+    RECT rect;
+    GetWindowRect(hwnd,&rect);
+    int windowWidth = rect.right - rect.left;
+    int windowHeight = rect.bottom - rect.top;
+
     for (int i = 0; i < noteCount; i++)
     {
         notes_true[i].rect.left = NOTE_MARGIN;
         notes_true[i].rect.top = yOffset;
-        notes_true[i].rect.right = NOTE_MARGIN + NOTE_WIDTH;
+        notes_true[i].rect.right = (windowWidth<800) ? (windowWidth/2) : 800;
         notes_true[i].rect.bottom = yOffset + NOTE_HEIGHT;
         yOffset += NOTE_HEIGHT + NOTE_MARGIN;
     }

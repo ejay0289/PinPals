@@ -5,10 +5,12 @@
 #define IDC_MYICON                      2
 #define IDI_PLUS_ICON                   101
 #define IDD_PINPALS_DIALOG              102
+#define IDI_OPTIONS_ICON                102
 #define IDS_APP_TITLE                   103
 #define IDD_ABOUTBOX                    103
 #define IDM_ABOUT                       104
 #define IDM_EXIT                        105
+#define IDI_ICON1                       105
 #define IDI_PINPALS                     107
 #define IDI_SMALL                       108
 #define IDC_PINPALS                     109
@@ -19,9 +21,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        101
+#define _APS_NEXT_RESOURCE_VALUE        106
 #define _APS_NEXT_COMMAND_VALUE         40001
 #define _APS_NEXT_CONTROL_VALUE         1000
-#define _APS_NEXT_SYMED_VALUE           102
+#define _APS_NEXT_SYMED_VALUE           103
 #endif
 #endif

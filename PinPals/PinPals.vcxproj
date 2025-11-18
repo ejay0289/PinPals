@@ -130,6 +130,9 @@
     <ResourceCompile Include="PinPals.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="icon1.ico" />
+    <Image Include="icon2.ico" />
+    <Image Include="menu_icon.ico" />
     <Image Include="PinPals.ico" />
     <Image Include="plus_icon.ico" />
     <Image Include="small.ico" />

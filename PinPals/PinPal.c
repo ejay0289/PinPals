@@ -46,6 +46,7 @@ int scrollPos = 0;
 struct Note* notes_true = NULL;
 struct Note* notes_unsaved = NULL;
 HICON hPlusIcon;
+HICON hOptionIcon;
 
 
 
@@ -96,7 +97,7 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY,
             DEFAULT_PITCH | FF_DONTCARE,
-            "Segoe UI"          // Font face
+            "Segoe UI"          // Font faceres
         );
 
         SendMessage(textArea, WM_SETFONT, (WPARAM)hFont, TRUE);
@@ -211,7 +212,7 @@ LRESULT CALLBACK NoteWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     //For tracking note updates
-    static char* idIsPresent = NULL;
+    static int idIsPresent = 0;
     static int noteUpdateId = 0;
 
 
@@ -263,9 +264,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
        int windowHeight = rect.bottom - rect.top;
        int scrollbarWidth = GetSystemMetrics(SM_CXVSCROLL);
        
-       if (noteCount > 0 && (windowWidth /2) <800) {
+       if (noteCount > 0 && (windowWidth * 0.7) <800) {
            for (int i = 0; i < noteCount; i++) {
-               notes_true[i].rect.right = windowWidth / 2;
+               notes_true[i].rect.right = windowWidth * 0.7;
            }
 
        }
@@ -306,16 +307,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 
         HWND optionsButton = CreateWindowEx(
-            0, "BUTTON", "***",
-            WS_CHILD | BS_PUSHBUTTON | WS_VISIBLE,
+            0, "BUTTON", "",
+            WS_CHILD | BS_OWNERDRAW | WS_VISIBLE,
             0, 0, 50, 50, hwnd, (HMENU)ID_OPTIONS_BUTTON, GetModuleHandle(NULL),
             NULL
         );
 
         HWND newNoteButton = CreateWindowEx(
-            0, "BUTTON", "+",
+            0, "BUTTON", "",
             WS_CHILD | BS_OWNERDRAW | WS_VISIBLE,
-            topRightX, 50, 100, 50, hwnd, (HMENU)ID_NEW_NOTE, GetModuleHandle(NULL),
+            topRightX, 50, 50, 50, hwnd, (HMENU)ID_NEW_NOTE, GetModuleHandle(NULL),
             NULL
         );
 
@@ -393,7 +394,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
 
             // Compute icon placement
-            int iconSize = 256;  // your .ico is 256x256
+            int iconSize = 30;  // your .ico is 256x256
             int btnWidth = lpDraw->rcItem.right - lpDraw->rcItem.left;
             int btnHeight = lpDraw->rcItem.bottom - lpDraw->rcItem.top;
 
@@ -410,6 +411,37 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
             return TRUE;
         }
+
+        if (lpDraw->CtlID == ID_OPTIONS_BUTTON)
+        {
+            // Fill background
+            FillRect(lpDraw->hDC, &lpDraw->rcItem, (HBRUSH)(COLOR_WINDOW + 1));
+
+            // Highlight when pressed
+            if (lpDraw->itemState & ODS_SELECTED)
+            {
+                FillRect(lpDraw->hDC, &lpDraw->rcItem, CreateSolidBrush(RGB(220, 220, 220)));
+            }
+
+            // Compute icon placement
+            int iconSize = 30;  // your .ico is 256x256
+            int btnWidth = lpDraw->rcItem.right - lpDraw->rcItem.left;
+            int btnHeight = lpDraw->rcItem.bottom - lpDraw->rcItem.top;
+
+            // If the button is smaller than 256x256, scale down proportionally
+            if (iconSize > btnWidth || iconSize > btnHeight)
+                iconSize = min(btnWidth, btnHeight);
+
+            // Center the icon
+            int iconX = lpDraw->rcItem.left + (btnWidth - iconSize) / 2;
+            int iconY = lpDraw->rcItem.top + (btnHeight - iconSize) / 2;
+
+            // Draw it in full resolution (or scaled if smaller)
+            DrawIconEx(lpDraw->hDC, iconX, iconY, hOptionIcon, iconSize, iconSize, 0, NULL, DI_NORMAL);
+
+            return TRUE;
+        }
+
     }
     break;
 
@@ -502,7 +534,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             SetWindowText(hEdit, noteValue);
 }
                 
-        idIsPresent = getDatabaseEntry(noteId);
+        idIsPresent = 1;
         noteUpdateId = noteId;
         free(noteValue);
         noteValue = NULL;
@@ -593,7 +625,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                                 notes_true[noteCount].rect = (RECT){ NOTE_MARGIN, NOTE_MARGIN + 50, NOTE_MARGIN + NOTE_WIDTH, NOTE_MARGIN + 50 + NOTE_HEIGHT };
                             }
 
-                            noteCount++;							
+                            noteCount++;		
+                            idIsPresent = 0;
+                            noteUpdateId = 0;
                             InvalidateRect(hwnd, NULL, TRUE);
                             UpdateWindow(hwnd);
                         }
@@ -644,7 +678,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
             else {
                 sqlite3_int64 lastId = sqlite3_last_insert_rowid(db);
-                idIsPresent = getDatabaseEntry(lastId);
+                idIsPresent = 1;
                 noteUpdateId = lastId;
                 notes_true[noteCount - 1].id = (int)lastId;
                 strncpy_s(notes_true[noteCount - 1].title, sizeof(notes_true[noteCount - 1].title), "New Note", _TRUNCATE);
@@ -685,7 +719,18 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
         IMAGE_ICON,
         256, 256,
         LR_CREATEDIBSECTION | LR_DEFAULTCOLOR
-    );   OpenDatabase();
+    );   
+
+    hOptionIcon = (HICON)LoadImage(
+        hInstance,
+        MAKEINTRESOURCE(IDI_ICON1),
+        IMAGE_ICON,
+        256, 256,
+        LR_CREATEDIBSECTION | LR_DEFAULTCOLOR
+    );
+
+
+   OpenDatabase();
    noteCount = getNoteCount(db);
    notes_true = malloc(sizeof(struct Note) * noteCount) ;
 
@@ -693,7 +738,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
    RECT rect = { 10, 10, 210, 110 };
 
    sqlite3_stmt* stmt;
-   const char* sql = "SELECT id, title, content FROM notes;";
+   const char* sql = "SELECT id, title, content FROM notes ORDER BY id DESC;";
 
    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
        MessageBoxA(NULL, sqlite3_errmsg(db), "Failed to prepare select", MB_OK | MB_ICONERROR);
@@ -967,6 +1012,8 @@ void RecalculateNotePositions(HWND hwnd) {
 
     InvalidateRect(hwnd, NULL, TRUE);
 }
+
+
 
 
 
